@@ -59,6 +59,7 @@ int main(int argc, char *argv[]) {
     buffer[i] = part1 * 16 + part2;
   }
   uint32_t length = *((uint32_t *)buffer);
+  printf("program len: %d\n", length);
 
   for (size_t i = 0; i < length; i++) {
     part1 = argv[2][i*2];

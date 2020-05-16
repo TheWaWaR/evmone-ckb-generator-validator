@@ -35,6 +35,10 @@ extern int execute_vm(const uint8_t *source, uint32_t length,
 
 #include <ckb_syscalls.h>
 
+#ifdef TEST_BIN
+#include <stdio.h>
+#endif
+
 int main(int argc, char *argv[]) {
   if (argc != 3) {
     ckb_debug(
@@ -42,13 +46,38 @@ int main(int argc, char *argv[]) {
         "endian integer> <executed program>");
     return -1;
   }
+
+#ifdef TEST_BIN
+  char buffer[2048];
+  char part1;
+  char part2;
+  for (size_t i = 0; i < 4; i++) {
+    part1 = argv[1][i*2];
+    part2 = argv[1][i*2 + 1];
+    part1 = part1 >= 'a' ? (part1 - 'a' + 10) : (part1 - '0');
+    part2 = part2 >= 'a' ? (part2 - 'a' + 10) : (part2 - '0');
+    buffer[i] = part1 * 16 + part2;
+  }
+  uint32_t length = *((uint32_t *)buffer);
+
+  for (size_t i = 0; i < length; i++) {
+    part1 = argv[2][i*2];
+    part2 = argv[2][i*2 + 1];
+    part1 = part1 >= 'a' ? (part1 - 'a' + 10) : (part1 - '0');
+    part2 = part2 >= 'a' ? (part2 - 'a' + 10) : (part2 - '0');
+    buffer[i] = part1 * 16 + part2;
+  }
+  const uint8_t *source = (const uint8_t *)buffer;
+#else
   uint32_t length = *((uint32_t *)argv[1]);
+  const uint8_t *source = (const uint8_t *)argv[2];
+#endif
+
   /* Generator don't need any setup for now, the actual APIs will be implemented
    * via syscalls */
   csal_change_t existing_values = NULL;
   csal_change_t changes = NULL;
-  return execute_vm((const uint8_t *)argv[2], length, &existing_values,
-                    &changes);
+  return execute_vm(source, length, &existing_values, &changes);
 }
 
 #define _CSAL_CHANGE_INSERT_SYSCALL_NUMBER 3073

@@ -1,0 +1,13 @@
+[submodule "deps/evmone"]
+	path = deps/evmone
+	url = https://github.com/ethereum/evmone.git
+[submodule "deps/intx"]
+	path = deps/intx
+	url = https://github.com/chfast/intx.git
+[submodule "deps/ckb-c-stdlib"]
+	path = deps/ckb-c-stdlib
+	url = https://github.com/nervosnetwork/ckb-c-stdlib
+[submodule "deps/ethash"]
+	path = deps/ethash
+	url = https://github.com/TheWaWaR/ethash.git
+	branch = support-riscv

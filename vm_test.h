@@ -84,15 +84,27 @@ void emit_log(struct evmc_host_context* context,
 }
 
 inline void check_params(const uint8_t call_kind,
-                  const uint32_t flags,
-                  const uint32_t depth,
-                  const uint32_t code_size,
-                  const uint8_t *code_data,
-                  const uint32_t input_size,
-                  const uint8_t *input_data) {
+                         const uint32_t flags,
+                         const uint32_t depth,
+                         const evmc_address *sender,
+                         const evmc_address *destination,
+                         const uint32_t code_size,
+                         const uint8_t *code_data,
+                         const uint32_t input_size,
+                         const uint8_t *input_data) {
   printf("call_kind: %d\n", call_kind);
   printf("flags: %d\n", flags);
   printf("depth: %d\n", depth);
+  printf("sender: ");
+  for (size_t i = 0; i < 20; i++) {
+    printf("%02x", *(sender->bytes+i));
+  }
+  printf("\n");
+  printf("destination: ");
+  for (size_t i = 0; i < 20; i++) {
+    printf("%02x", *(destination->bytes+i));
+  }
+  printf("\n");
   printf("input_size: %d\n", input_size);
   printf("input_data: %p\n", (void *)input_data);
   printf("code_size: %d\n", code_size);

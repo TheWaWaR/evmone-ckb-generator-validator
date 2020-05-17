@@ -18,10 +18,13 @@
 #define CALL_KIND_LEN 1
 #define FLAGS_LEN 4
 #define DEPTH_LEN 4
+#define ADDRESS_LEN 20
 #define CALL_KIND_OFFSET SIGNATURE_LEN
 #define FLAGS_OFFSET (CALL_KIND_OFFSET + CALL_KIND_LEN)
 #define DEPTH_OFFSET (FLAGS_OFFSET + FLAGS_LEN)
-#define CODE_OFFSET (DEPTH_OFFSET + DEPTH_LEN)
+#define SENDER_OFFSET (DEPTH_OFFSET + DEPTH_LEN)
+#define DESTINATION_OFFSET (SENDER_OFFSET + ADDRESS_LEN)
+#define CODE_OFFSET (DESTINATION_OFFSET + ADDRESS_LEN)
 
 /// NOTE: This program must compile use g++ since evmone implemented with c++17
 int execute_vm(const uint8_t *source,
@@ -32,12 +35,14 @@ int execute_vm(const uint8_t *source,
   const uint8_t call_kind = source[CALL_KIND_OFFSET];
   const uint32_t flags = *(uint32_t *)(source + FLAGS_OFFSET);
   const uint32_t depth = *(uint32_t *)(source + DEPTH_OFFSET);
+  const evmc_address sender = *(evmc_address *)(source + SENDER_OFFSET);
+  const evmc_address destination = *(evmc_address *)(source + DESTINATION_OFFSET);
   const uint32_t code_size = *(uint32_t *)(source + CODE_OFFSET);
   const uint8_t *code_data = source + (CODE_OFFSET + 4);
   const uint32_t input_size = *(uint32_t *)(code_data + code_size);
   const uint8_t *input_data = input_size > 0 ? code_data + (code_size + 4) : NULL;
 
-  check_params(call_kind, flags, depth, code_size, code_data, input_size, input_data);
+  check_params(call_kind, flags, depth, &sender, &destination, code_size, code_data, input_size, input_data);
 
   struct evmc_vm *vm = evmc_create_evmone();
   struct evmc_host_interface interface = { NULL, get_storage, set_storage, NULL, NULL, NULL, NULL, NULL, NULL, get_tx_context, NULL, emit_log};
@@ -46,8 +51,8 @@ int execute_vm(const uint8_t *source,
 
   struct evmc_message msg;
   msg.kind = (evmc_call_kind) call_kind;
-  msg.destination.bytes[19] = 4;
-  msg.sender.bytes[18] = 3;
+  msg.destination = destination;
+  msg.sender = sender;
   msg.flags = flags;
   msg.depth = depth;
   msg.input_data = input_data;

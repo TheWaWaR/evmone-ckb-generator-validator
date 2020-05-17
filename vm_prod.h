@@ -48,12 +48,14 @@ void emit_log(struct evmc_host_context* context,
 
 
 inline void check_params(const uint8_t call_kind,
-                  const uint32_t flags,
-                  const uint32_t depth,
-                  const uint32_t code_size,
-                  const uint8_t *code_data,
-                  const uint32_t input_size,
-                  const uint8_t *input_data) {
+                         const uint32_t flags,
+                         const uint32_t depth,
+                         const evmc_address *sender,
+                         const evmc_address *destination,
+                         const uint32_t code_size,
+                         const uint8_t *code_data,
+                         const uint32_t input_size,
+                         const uint8_t *input_data) {
   /* Do noting */
 }
 

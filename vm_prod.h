@@ -33,9 +33,9 @@ enum evmc_storage_status set_storage(struct evmc_host_context* context,
                                      const evmc_address* address,
                                      const evmc_bytes32* key,
                                      const evmc_bytes32* value) {
-  int _ret;
-  _ret = csal_change_insert(context->existing_values, key->bytes, value->bytes);
-  _ret = csal_change_insert(context->changes, key->bytes, value->bytes);
+  /* int _ret; */
+  csal_change_insert(context->existing_values, key->bytes, value->bytes);
+  csal_change_insert(context->changes, key->bytes, value->bytes);
   return EVMC_STORAGE_ADDED;
 }
 void emit_log(struct evmc_host_context* context,

@@ -133,9 +133,9 @@ void csal_change_organize(csal_change_t *state) {
   qsort(state->entries, state->length, sizeof(csal_entry_t), _csal_entry_cmp);
   /* Remove duplicate ones */
   int32_t sorted = 0, next = 0;
-  while (next < state->length) {
+  while ((uint32_t)next < state->length) {
     int32_t item_index = next++;
-    while (next < state->length &&
+    while ((uint32_t)next < state->length &&
            memcmp(state->entries[item_index].key, state->entries[next].key,
                   CSAL_KEY_BYTES) == 0) {
       next++;
@@ -341,7 +341,7 @@ int csal_smt_verify(const uint8_t hash[32], const csal_change_t *pairs,
 #endif /* CSAL_VALIDATOR_TYPE */
 
 #ifndef CSAL_NO_VALIDATOR_SKELETON
-#include <blockchain.h>
+#include <molecule/blockchain.h>
 #include <ckb_syscalls.h>
 
 /*

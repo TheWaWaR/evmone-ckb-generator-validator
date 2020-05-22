@@ -2,7 +2,7 @@
 #define CSAL_VALIDATOR_UTILS_H_
 
 #include <blake2b.h>
-#include <blockchain.h>
+#include <molecule/blockchain.h>
 #include <ckb_syscalls.h>
 
 int csal_check_type_id() {

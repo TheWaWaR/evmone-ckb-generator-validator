@@ -1,0 +1,103 @@
+diff --git a/molecule/molecule_builder.h b/molecule/molecule_builder.h
+index d899d06..a3d5650 100644
+--- a/molecule/molecule_builder.h
++++ b/molecule/molecule_builder.h
+@@ -2,9 +2,7 @@
+ #define MOLECULE_BUILDER_H
+ 
+ #ifdef __cplusplus
+-#define _CPP_BEGIN extern "C" {
+-#define _CPP_END }
+-_CPP_BEGIN
++extern "C" {
+ #endif /* __cplusplus */
+ 
+ #include <stddef.h>
+@@ -17,9 +15,6 @@ _CPP_BEGIN
+  * This part is not for normal users.
+  */
+ 
+-// Test if the host is big endian machine.
+-#define is_le() (*(unsigned char *)&(uint16_t){1})
+-
+ /*
+  * Definitions of types and simple utilities.
+  */
+@@ -45,8 +40,13 @@ typedef struct {
+ /* Utilities. */
+ 
+ void mol_pack_number(uint8_t *dst, mol_num_t *num) {
++  const static union {
++    uint16_t i;
++    char c[2];
++  } bint = {0x0102};
++
+   const uint8_t *src = (const uint8_t *)num;
+-  if (is_le()) {
++  if (bint.c[0] != 1) {
+     memcpy(dst, src, MOL_NUM_T_SIZE);
+   } else {
+     dst[3] = src[0];
+@@ -308,9 +308,7 @@ mol_seg_res_t mol_dynvec_builder_finalize(mol_builder_t builder) {
+ #undef is_le
+ 
+ #ifdef __cplusplus
+-_CPP_END
+-#undef _CPP_BEGIN
+-#undef _CPP_END
++}
+ #endif /* __cplusplus */
+ 
+ #endif /* MOLECULE_BUILDER_H */
+diff --git a/molecule/molecule_reader.h b/molecule/molecule_reader.h
+index b40cf35..b5a9d47 100644
+--- a/molecule/molecule_reader.h
++++ b/molecule/molecule_reader.h
+@@ -2,9 +2,7 @@
+ #define MOLECULE_READER_H
+ 
+ #ifdef __cplusplus
+-#define _CPP_BEGIN extern "C" {
+-#define _CPP_END }
+-_CPP_BEGIN
++extern "C" {
+ #endif /* __cplusplus */
+ 
+ #include <stdbool.h>
+@@ -14,8 +12,6 @@ _CPP_BEGIN
+  * This part is not for normal users.
+  */
+ 
+-// Test if the host is big endian machine.
+-#define is_le() (*(unsigned char *)&(uint16_t){1})
+ 
+ /*
+  * Definitions of types and simple utilities.
+@@ -65,7 +61,12 @@ typedef struct {
+ /* Utilities. */
+ 
+ mol_num_t mol_unpack_number(const uint8_t *src) {
+-  if (is_le()) {
++  const static union {
++    uint16_t i;
++    char c[2];
++  } bint = {0x0102};
++
++  if (bint.c[0] != 1) {
+     return *(const uint32_t *)src;
+   } else {
+     uint32_t output = 0;
+@@ -223,12 +224,8 @@ mol_seg_t mol_fixvec_slice_raw_bytes(const mol_seg_t *input) {
+  * Undef macros which are internal use only.
+  */
+ 
+-#undef is_le
+-
+ #ifdef __cplusplus
+-_CPP_END
+-#undef _CPP_BEGIN
+-#undef _CPP_END
++}
+ #endif /* __cplusplus */
+ 
+ #endif /* MOLECULE_READER_H */

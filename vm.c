@@ -46,19 +46,21 @@ int execute_vm(const uint8_t *source,
   check_params(call_kind, flags, depth, &sender, &destination, code_size, code_data, input_size, input_data);
 
   struct evmc_vm *vm = evmc_create_evmone();
-  struct evmc_host_interface interface = { NULL, get_storage, set_storage, NULL, NULL, NULL, NULL, NULL, NULL, get_tx_context, NULL, emit_log};
+  struct evmc_host_interface interface = { NULL, get_storage, set_storage, get_balance, NULL, NULL, NULL, selfdestruct, NULL, get_tx_context, NULL, emit_log};
   struct evmc_host_context context;
   context_init(&context, existing_values, changes);
 
   struct evmc_message msg;
   msg.kind = (evmc_call_kind) call_kind;
-  msg.destination = destination;
-  msg.sender = sender;
   msg.flags = flags;
   msg.depth = depth;
+  msg.gas = 10000000;
+  msg.destination = destination;
+  msg.sender = sender;
   msg.input_data = input_data;
   msg.input_size = input_size;
-  msg.gas = 10000000;
+  msg.value = evmc_uint256be{};
+  msg.create2_salt = evmc_bytes32{};
 
   struct evmc_result res = vm->execute(vm, &interface, &context, EVMC_MAX_REVISION, &msg, code_data, code_size);
 

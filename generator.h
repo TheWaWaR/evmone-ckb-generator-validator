@@ -27,7 +27,7 @@ int csal_change_fetch(csal_change_t *state, const uint8_t key[CSAL_KEY_BYTES],
                       uint8_t value[CSAL_VALUE_BYTES]);
 int csal_return(const uint8_t *data, uint32_t data_length);
 int csal_log(const uint8_t *data, uint32_t data_length);
-
+int csal_selfdestruct(const uint8_t *data, uint32_t data_length);
 
 /* See validator.h for explanations on execute_vm */
 extern int execute_vm(const uint8_t *source, uint32_t length,
@@ -48,12 +48,15 @@ int main(int argc, char *argv[]) {
   }
 
 #ifdef TEST_BIN
-  char buffer[2048];
+  const char *length_hex = argv[1];
+  const char *binary_hex = argv[2];
+
+  char buffer[8192];
   char part1;
   char part2;
   for (size_t i = 0; i < 4; i++) {
-    part1 = argv[1][i*2];
-    part2 = argv[1][i*2 + 1];
+    part1 = length_hex[i*2];
+    part2 = length_hex[i*2 + 1];
     part1 = part1 >= 'a' ? (part1 - 'a' + 10) : (part1 - '0');
     part2 = part2 >= 'a' ? (part2 - 'a' + 10) : (part2 - '0');
     buffer[i] = part1 * 16 + part2;
@@ -62,8 +65,8 @@ int main(int argc, char *argv[]) {
   printf("program len: %d\n", length);
 
   for (size_t i = 0; i < length; i++) {
-    part1 = argv[2][i*2];
-    part2 = argv[2][i*2 + 1];
+    part1 = binary_hex[i*2];
+    part2 = binary_hex[i*2 + 1];
     part1 = part1 >= 'a' ? (part1 - 'a' + 10) : (part1 - '0');
     part2 = part2 >= 'a' ? (part2 - 'a' + 10) : (part2 - '0');
     buffer[i] = part1 * 16 + part2;
@@ -85,6 +88,7 @@ int main(int argc, char *argv[]) {
 #define _CSAL_CHANGE_FETCH_SYSCALL_NUMBER 3074
 #define _CSAL_RETURN_SYSCALL_NUMBER 3075
 #define _CSAL_LOG_SYSCALL_NUMBER 3076
+#define _CSAL_SELFDESTRUCT_SYSCALL_NUMBER 3077
 
 int csal_change_insert(csal_change_t *state, const uint8_t key[CSAL_KEY_BYTES],
                        const uint8_t value[CSAL_VALUE_BYTES]) {
@@ -99,6 +103,9 @@ int csal_return(const uint8_t *data, uint32_t data_length) {
 }
 int csal_log(const uint8_t *data, uint32_t data_length) {
   return syscall(_CSAL_LOG_SYSCALL_NUMBER, data, data_length, 0, 0, 0, 0);
+}
+int csal_selfdestruct(const uint8_t *data, uint32_t data_length) {
+  return syscall(_CSAL_SELFDESTRUCT_SYSCALL_NUMBER, data, data_length, 0, 0, 0, 0);
 }
 
 #endif /* CSAL_SMT_GENERATOR_H_ */

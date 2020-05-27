@@ -14,14 +14,19 @@ struct evmc_host_context {
 };
 
 struct evmc_tx_context get_tx_context(struct evmc_host_context* context) {
-  struct evmc_tx_context ctx;
+  struct evmc_tx_context ctx{};
   return ctx;
 }
 
 evmc_bytes32 get_storage(struct evmc_host_context* context,
                          const evmc_address* address,
                          const evmc_bytes32* key) {
-  evmc_bytes32 value;
+  printf("[get_storage] key: ");
+  for (size_t i = 0; i < 32; i++) {
+    printf("%02x", *(key->bytes+i));
+  }
+  printf("\n");
+  evmc_bytes32 value{};
   return value;
 }
 
@@ -52,6 +57,27 @@ enum evmc_storage_status set_storage(struct evmc_host_context* context,
   context->value = *value;
 
   return EVMC_STORAGE_ADDED;
+}
+
+evmc_uint256be get_balance(struct evmc_host_context* context,
+                           const evmc_address* address) {
+  printf("[get_balance] address: ");
+  for (size_t i = 0; i < 20; i++) {
+    printf("%02x", *(address->bytes+i));
+  }
+  printf("\n");
+  evmc_uint256be balance{};
+  return balance;
+}
+
+void selfdestruct(struct evmc_host_context* context,
+                       const evmc_address* address,
+                       const evmc_address* beneficiary) {
+  printf("[selfdestruct] beneficiary: ");
+  for (size_t i = 0; i < 20; i++) {
+    printf("%02x", *(beneficiary->bytes+i));
+  }
+  printf("\n");
 }
 void emit_log(struct evmc_host_context* context,
               const evmc_address* address,
@@ -106,7 +132,12 @@ inline void check_params(const uint8_t call_kind,
   }
   printf("\n");
   printf("input_size: %d\n", input_size);
-  printf("input_data: %p\n", (void *)input_data);
+  printf("input_data_ptr: %p\n", (void *)input_data);
+  printf("input_data: ");
+  for (size_t i = 0; i < input_size; i++) {
+    printf("%02x", *(input_data+i));
+  }
+  printf("\n");
   printf("code_size: %d\n", code_size);
   printf("code_data: ");
   for (size_t i = 0; i < code_size; i++) {

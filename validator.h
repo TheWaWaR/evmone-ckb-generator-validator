@@ -63,9 +63,14 @@ int csal_change_fetch(csal_change_t *state, const uint8_t key[CSAL_KEY_BYTES],
 void csal_change_organize(csal_change_t *state);
 
 int csal_return(const uint8_t *data, uint32_t data_length) {
+  // TODO: check return data
   return 0;
 }
 int csal_log(const uint8_t *data, uint32_t data_length) {
+  return 0;
+}
+int csal_selfdestruct(const uint8_t *data, uint32_t data_length) {
+  // TODO: check selfdestruct
   return 0;
 }
 

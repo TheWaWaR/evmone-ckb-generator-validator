@@ -46,12 +46,6 @@ int execute_vm(const uint8_t *source,
 
   check_params(call_kind, flags, depth, &sender, &destination, code_size, code_data, input_size, input_data);
 
-  // TODO:
-  //   * check code_hash not changed
-  //   * check code_hash in data filed match the blake2b_h256(code_data)
-  //   * check the sender recovery from signature match the sender from program
-  //   * check selfdestruct called when output is missing
-
   struct evmc_vm *vm = evmc_create_evmone();
   struct evmc_host_interface interface = { account_exists, get_storage, set_storage, get_balance, get_code_size, get_code_hash, copy_code, selfdestruct, NULL, get_tx_context, NULL, emit_log};
   struct evmc_host_context context;

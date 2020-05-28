@@ -119,7 +119,11 @@ inline void check_params(const uint8_t call_kind,
                          const uint8_t *code_data,
                          const uint32_t input_size,
                          const uint8_t *input_data) {
-  /* Do noting */
+  // TODO:
+  //   * check code_hash not changed
+  //   * check code_hash in data filed match the blake2b_h256(code_data)
+  //   * check the sender recovery from signature match the sender from program
+  //   * check selfdestruct called when output is missing
 }
 
 inline void context_init(struct evmc_host_context* context,

@@ -39,9 +39,10 @@
 #include <ckb_syscalls.h>
 
 #define CSAL_ERROR_INSUFFICIENT_CAPACITY -20
-#define CSAL_ERROR_NOT_FOUND -21
-#define CSAL_LAST_COMMON_ERROR CSAL_ERROR_NOT_FOUND /* -21 */
+#define CSAL_ERROR_NOT_FOUND             -21
+#define CSAL_ERROR_INVALID_TYPE_ID       -22
 
+#define CSAL_SCRIPT_ARGS_LEN 20
 #define CSAL_KEY_BYTES 32
 #define CSAL_VALUE_BYTES 32
 
@@ -188,11 +189,10 @@ void csal_change_organize(csal_change_t *state) {
 #error "SMT solution only works with 256 bit keys!"
 #endif
 
-#define CSAL_ERROR_INVALID_PROOF_LENGTH (CSAL_LAST_COMMON_ERROR - 1) /* -22 */
-#define CSAL_ERROR_INVALID_PROOF (CSAL_LAST_COMMON_ERROR - 2)        /* -23 */
-#define CSAL_ERROR_INVALID_STACK (CSAL_LAST_COMMON_ERROR - 3)        /* -24 */
-#define CSAL_ERROR_INVALID_SIBLING (CSAL_LAST_COMMON_ERROR - 4)      /* -25 */
-#define CSAL_LAST_ERROR CSAL_ERROR_INVALID_SIBLING                   /* -25 */
+#define CSAL_ERROR_INVALID_PROOF_LENGTH -30
+#define CSAL_ERROR_INVALID_PROOF        -31
+#define CSAL_ERROR_INVALID_STACK        -32
+#define CSAL_ERROR_INVALID_SIBLING      -33
 
 int csal_smt_update_root(uint8_t buffer[32], const csal_change_t *pairs,
                          const uint8_t *proof, uint32_t proof_length);
@@ -411,14 +411,16 @@ extern int execute_vm(const uint8_t *source,
 #define MAXIMUM_READS 1024
 #define MAXIMUM_WRITES 1024
 #define SCRIPT_SIZE 128
+#define INPUT_SIZE 44
 #define WITNESS_SIZE (300 * 1024)
 
-#define ERROR_BUFFER_NOT_ENOUGH (CSAL_LAST_ERROR - 1) /* -26 */
-#define ERROR_INVALID_DATA (CSAL_LAST_ERROR - 2)      /* -27 */
-#define ERROR_EOF (CSAL_LAST_ERROR - 3)               /* -28 */
-#define ERROR_TOO_MANY_CHANGES (CSAL_LAST_ERROR - 4)  /* -29 */
-#define ERROR_UNSUPPORED_FLAGS (CSAL_LAST_ERROR - 5)  /* -30 */
-#define ERROR_INVALID_ROOT_HASH (CSAL_LAST_ERROR - 6) /* -31 */
+#define ERROR_BUFFER_NOT_ENOUGH    -50
+#define ERROR_INVALID_DATA         -51
+#define ERROR_EOF                  -52
+#define ERROR_TOO_MANY_CHANGES     -53
+#define ERROR_UNSUPPORED_FLAGS     -54
+#define ERROR_INVALID_ROOT_HASH    -55
+#define ERROR_DESTRUCT_WITH_OUTPUT -56
 
 #define UNUSED_FLAGS 0xfffffffffffffffe
 
@@ -479,10 +481,70 @@ int main() {
   }
   mol_seg_t args_seg = MolReader_Script_get_args(&script_seg);
   mol_seg_t args_bytes_seg = MolReader_Bytes_raw_bytes(&args_seg);
-  if (args_bytes_seg.size < 20) {
+  if (args_bytes_seg.size != CSAL_SCRIPT_ARGS_LEN) {
     return ERROR_INVALID_DATA;
   }
-  // TODO: check this is a type id script
+
+  size_t index = 0;
+  int input_index = -1;
+  uint8_t type_script[SCRIPT_SIZE];
+  while (1) {
+    len = SCRIPT_SIZE;
+    ret = ckb_load_cell_by_field(type_script, &len, 0, index, CKB_SOURCE_INPUT, CKB_CELL_FIELD_TYPE);
+    if (ret == CKB_INDEX_OUT_OF_BOUND) {
+      break;
+    }
+    if (script_seg.size == len && memcmp(script_seg.ptr, type_script, len) == 0) {
+      if (input_index > -1) {
+        return CSAL_ERROR_INVALID_TYPE_ID;
+      } else {
+        input_index = (int)index;
+      }
+    }
+    index += 1;
+  }
+
+  int output_index = -1;
+  index = 0;
+  while (1) {
+    len = SCRIPT_SIZE;
+    ret = ckb_load_cell_by_field(type_script, &len, 0, index, CKB_SOURCE_OUTPUT, CKB_CELL_FIELD_TYPE);
+    if (ret == CKB_INDEX_OUT_OF_BOUND) {
+      break;
+    }
+    if (script_seg.size == len && memcmp(script_seg.ptr, type_script, len) == 0) {
+      if (output_index > -1) {
+        return CSAL_ERROR_INVALID_TYPE_ID;
+      } else {
+        output_index = (int)index;
+      }
+    }
+    index += 1;
+  }
+
+  debug_print_int("input_index:", input_index);
+  debug_print_int("output_index:", output_index);
+
+  // Create
+  if (input_index == -1 && output_index > -1) {
+    ckb_debug("create contract");
+
+    uint8_t first_input[INPUT_SIZE];
+    len = INPUT_SIZE;
+    ret = ckb_load_input(first_input, &len, 0, 0, CKB_SOURCE_INPUT);
+    uint64_t first_output_index = (uint64_t) output_index;
+
+    uint8_t hash[32];
+    blake2b_state blake2b_ctx;
+    blake2b_init(&blake2b_ctx, 32);
+    blake2b_update(&blake2b_ctx, first_input, len);
+    blake2b_update(&blake2b_ctx, ((const void *)(&first_output_index)), 8);
+    blake2b_final(&blake2b_ctx, hash, 32);
+    if (memcmp(args_bytes_seg.ptr, hash, CSAL_SCRIPT_ARGS_LEN) != 0) {
+      return CSAL_ERROR_INVALID_TYPE_ID;
+    }
+  }
+  // Destroy => if (input_index > -1 && output_index == -1) {}
 
   /*
    * Witness shall contain the content used for validating account state change.
@@ -534,7 +596,6 @@ int main() {
     }
   }
   debug_print_data(" input root:", input_root_hash, 32);
-
 
   /*
    * Parse VM source, read values, read proofs from witness content part.
@@ -619,6 +680,10 @@ int main() {
   len = 32;
   ret =
     ckb_load_cell_data(output_root_hash, &len, 0, 0, CKB_SOURCE_GROUP_OUTPUT);
+  if (ret != CKB_INDEX_OUT_OF_BOUND && destructed) {
+    ckb_debug("destructed contract can not have output in the same group");
+    return ERROR_DESTRUCT_WITH_OUTPUT;
+  }
   if (ret == CKB_INDEX_OUT_OF_BOUND && destructed) {
     /* This is a special mode for destorying cells */
     ckb_debug("contract destructed");
@@ -685,11 +750,13 @@ int main() {
    * Now that we have a valid proof, we use it to generate new root hash
    * using wrtie_changes
    */
-  ret =
+  if (proof_size > 0) {
+    ret =
       csal_smt_update_root(input_root_hash, &write_changes, proof, proof_size);
-  debug_print_int("csal_smt_update_root(input_root_hash, &write_changes);", ret);
-  if (ret != CKB_SUCCESS) {
-    return ret;
+    debug_print_int("csal_smt_update_root(input_root_hash, &write_changes);", ret);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
   }
 
   if (memcmp(input_root_hash, output_root_hash, 32) != 0) {

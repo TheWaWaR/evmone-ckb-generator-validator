@@ -562,6 +562,7 @@ int main() {
   mol_seg_t witness_seg;
   witness_seg.ptr = (uint8_t *)witness;
   witness_seg.size = len;
+  debug_print_int("load witness:", (int) witness_seg.size);
   if (MolReader_WitnessArgs_verify(&witness_seg, false) != MOL_OK) {
     return ERROR_INVALID_DATA;
   }
@@ -660,6 +661,8 @@ int main() {
     if (ret != CKB_SUCCESS) {
       return ret;
     }
+  } else if (read_changes.length != 0) {
+      return CSAL_ERROR_INVALID_PROOF;
   }
 
   /* Now let's execute the VM. */
@@ -745,6 +748,8 @@ int main() {
     if (ret != CKB_SUCCESS) {
       return ret;
     }
+  } else if (read_changes.length != 0) {
+      return CSAL_ERROR_INVALID_PROOF;
   }
   /*
    * Now that we have a valid proof, we use it to generate new root hash

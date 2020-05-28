@@ -1,4 +1,4 @@
-#include <evmc/evmc.h>
+ #include <evmc/evmc.h>
 
 #ifdef BUILD_GENERATOR
 #include "generator.h"
@@ -11,13 +11,26 @@ struct evmc_host_context {
   evmc_address address;
   evmc_bytes32 key;
   evmc_bytes32 value;
+  evmc_address tx_origin;
+  bool destructed;
 };
 
 struct evmc_tx_context get_tx_context(struct evmc_host_context* context) {
+  printf("[get_tx_context]");
   struct evmc_tx_context ctx{};
+  ctx.tx_origin = context->tx_origin;
   return ctx;
 }
 
+bool account_exists(struct evmc_host_context* context,
+                    const evmc_address* address) {
+  printf("[account_exists] address: ");
+  for (size_t i = 0; i < 20; i++) {
+    printf("%02x", *(address->bytes+i));
+  }
+  printf("\n");
+  return true;
+}
 evmc_bytes32 get_storage(struct evmc_host_context* context,
                          const evmc_address* address,
                          const evmc_bytes32* key) {
@@ -57,6 +70,46 @@ enum evmc_storage_status set_storage(struct evmc_host_context* context,
   context->value = *value;
 
   return EVMC_STORAGE_ADDED;
+}
+
+size_t get_code_size(struct evmc_host_context* context,
+                     const evmc_address* address) {
+  printf("[get_code_size] address: ");
+  for (size_t i = 0; i < 20; i++) {
+    printf("%02x", *(address->bytes+i));
+  }
+  printf("\n");
+  return 0;
+}
+
+evmc_bytes32 get_code_hash(struct evmc_host_context* context,
+                           const evmc_address* address) {
+  printf("[get_code_hash] address: ");
+  for (size_t i = 0; i < 20; i++) {
+    printf("%02x", *(address->bytes+i));
+  }
+  printf("\n");
+  evmc_bytes32 hash{};
+  return hash;
+}
+
+size_t copy_code(struct evmc_host_context* context,
+                 const evmc_address* address,
+                 size_t code_offset,
+                 uint8_t* buffer_data,
+                 size_t buffer_size) {
+  printf("[copy_code] address: ");
+  for (size_t i = 0; i < 20; i++) {
+    printf("%02x", *(address->bytes+i));
+  }
+  printf("\n");
+  printf("  > code_offset: %ld\n", code_offset);
+  printf("  > buffer_data: 0x");
+  for (size_t i = 0; i < buffer_size; i++) {
+    printf("%02x", *(buffer_data+i));
+  }
+  printf("\n");
+  return 0;
 }
 
 evmc_uint256be get_balance(struct evmc_host_context* context,
@@ -146,10 +199,12 @@ inline void check_params(const uint8_t call_kind,
   printf("\n");
 }
 
-inline void context_init(struct evmc_host_context* _context,
-                  csal_change_t *_existing_values,
-                  csal_change_t *_changes) {
+inline void context_init(struct evmc_host_context* context,
+                         csal_change_t *_existing_values,
+                         csal_change_t *changes,
+                         evmc_address tx_origin) {
   /* Do nothing */
+  context->destructed = false;
 }
 
 inline void return_result(const struct evmc_message *msg, const struct evmc_result *res) {

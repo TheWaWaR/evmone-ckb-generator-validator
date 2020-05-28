@@ -31,7 +31,8 @@
 int execute_vm(const uint8_t *source,
                uint32_t length,
                csal_change_t *existing_values,
-               csal_change_t *changes)
+               csal_change_t *changes,
+               bool *destructed)
 {
   const uint8_t call_kind = source[CALL_KIND_OFFSET];
   const uint32_t flags = *(uint32_t *)(source + FLAGS_OFFSET);
@@ -45,10 +46,16 @@ int execute_vm(const uint8_t *source,
 
   check_params(call_kind, flags, depth, &sender, &destination, code_size, code_data, input_size, input_data);
 
+  // TODO:
+  //   * check code_hash not changed
+  //   * check code_hash in data filed match the blake2b_h256(code_data)
+  //   * check the sender recovery from signature match the sender from program
+  //   * check selfdestruct called when output is missing
+
   struct evmc_vm *vm = evmc_create_evmone();
-  struct evmc_host_interface interface = { NULL, get_storage, set_storage, get_balance, NULL, NULL, NULL, selfdestruct, NULL, get_tx_context, NULL, emit_log};
+  struct evmc_host_interface interface = { account_exists, get_storage, set_storage, get_balance, get_code_size, get_code_hash, copy_code, selfdestruct, NULL, get_tx_context, NULL, emit_log};
   struct evmc_host_context context;
-  context_init(&context, existing_values, changes);
+  context_init(&context, existing_values, changes, sender);
 
   struct evmc_message msg;
   msg.kind = (evmc_call_kind) call_kind;
@@ -64,6 +71,7 @@ int execute_vm(const uint8_t *source,
 
   struct evmc_result res = vm->execute(vm, &interface, &context, EVMC_MAX_REVISION, &msg, code_data, code_size);
 
+  *destructed = context.destructed;
   return_result(&msg, &res);
 
   return (int)res.status_code;

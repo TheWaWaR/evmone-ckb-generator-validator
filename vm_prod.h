@@ -10,11 +10,19 @@
 struct evmc_host_context {
   csal_change_t *existing_values;
   csal_change_t *changes;
+  evmc_address tx_origin;
+  bool destructed;
 };
 
 struct evmc_tx_context get_tx_context(struct evmc_host_context* context) {
   struct evmc_tx_context ctx{};
+  ctx.tx_origin = context->tx_origin;
   return ctx;
+}
+
+bool account_exists(struct evmc_host_context* context,
+                    const evmc_address* address) {
+  return true;
 }
 
 evmc_bytes32 get_storage(struct evmc_host_context* context,
@@ -38,16 +46,40 @@ enum evmc_storage_status set_storage(struct evmc_host_context* context,
   csal_change_insert(context->changes, key->bytes, value->bytes);
   return EVMC_STORAGE_ADDED;
 }
+
+size_t get_code_size(struct evmc_host_context* context,
+                     const evmc_address* address) {
+  return 0;
+}
+
+evmc_bytes32 get_code_hash(struct evmc_host_context* context,
+                           const evmc_address* address) {
+  evmc_bytes32 hash{};
+  return hash;
+}
+
+size_t copy_code(struct evmc_host_context* context,
+                 const evmc_address* address,
+                 size_t code_offset,
+                 uint8_t* buffer_data,
+                 size_t buffer_size) {
+  return 0;
+}
+
 evmc_uint256be get_balance(struct evmc_host_context* context,
                            const evmc_address* address) {
+  // TODO: how to return balance?
   evmc_uint256be balance{};
   return balance;
 }
+
 void selfdestruct(struct evmc_host_context* context,
                   const evmc_address* address,
                   const evmc_address* beneficiary) {
+  context->destructed = true;
   csal_selfdestruct(beneficiary->bytes, 20);
 }
+
 void emit_log(struct evmc_host_context* context,
               const evmc_address* address,
               const uint8_t* data,
@@ -91,10 +123,13 @@ inline void check_params(const uint8_t call_kind,
 }
 
 inline void context_init(struct evmc_host_context* context,
-                  csal_change_t *existing_values,
-                  csal_change_t *changes) {
+                         csal_change_t *existing_values,
+                         csal_change_t *changes,
+                         evmc_address tx_origin) {
   context->existing_values = existing_values;
   context->changes = changes;
+  context->tx_origin = tx_origin;
+  context->destructed = false;
 }
 
 inline void return_result(const struct evmc_message *_msg, const struct evmc_result *res) {

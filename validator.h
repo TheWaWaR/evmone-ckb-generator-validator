@@ -35,9 +35,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <stdio.h>
+#include <ckb_syscalls.h>
+
 #define CSAL_ERROR_INSUFFICIENT_CAPACITY -20
 #define CSAL_ERROR_NOT_FOUND -21
-#define CSAL_LAST_COMMON_ERROR CSAL_ERROR_NOT_FOUND
+#define CSAL_LAST_COMMON_ERROR CSAL_ERROR_NOT_FOUND /* -21 */
 
 #define CSAL_KEY_BYTES 32
 #define CSAL_VALUE_BYTES 32
@@ -73,6 +76,24 @@ int csal_selfdestruct(const uint8_t *data, uint32_t data_length) {
   // TODO: check selfdestruct
   return 0;
 }
+
+static char debug_buffer[1024];
+static void debug_print_data(const char *prefix,
+                             const uint8_t *data,
+                             uint32_t data_len) {
+  int offset = 0;
+  offset += sprintf(debug_buffer, "%s 0x", prefix);
+  for (size_t i = 0; i < data_len; i++) {
+    offset += sprintf(debug_buffer + offset, "%02x", data[i]);
+  }
+  debug_buffer[offset] = '\0';
+  ckb_debug(debug_buffer);
+}
+static void debug_print_int(const char *prefix, int ret) {
+  sprintf(debug_buffer, "%s => %d", prefix, ret);
+  ckb_debug(debug_buffer);
+}
+
 
 #ifndef CSAL_NO_IMPLEMENTATION
 void csal_change_init(csal_change_t *state, csal_entry_t *buffer,
@@ -167,11 +188,11 @@ void csal_change_organize(csal_change_t *state) {
 #error "SMT solution only works with 256 bit keys!"
 #endif
 
-#define CSAL_ERROR_INVALID_PROOF_LENGTH (CSAL_LAST_COMMON_ERROR - 1)
-#define CSAL_ERROR_INVALID_PROOF (CSAL_LAST_COMMON_ERROR - 2)
-#define CSAL_ERROR_INVALID_STACK (CSAL_LAST_COMMON_ERROR - 3)
-#define CSAL_ERROR_INVALID_SIBLING (CSAL_LAST_COMMON_ERROR - 4)
-#define CSAL_LAST_ERROR CSAL_ERROR_INVALID_SIBLING
+#define CSAL_ERROR_INVALID_PROOF_LENGTH (CSAL_LAST_COMMON_ERROR - 1) /* -22 */
+#define CSAL_ERROR_INVALID_PROOF (CSAL_LAST_COMMON_ERROR - 2)        /* -23 */
+#define CSAL_ERROR_INVALID_STACK (CSAL_LAST_COMMON_ERROR - 3)        /* -24 */
+#define CSAL_ERROR_INVALID_SIBLING (CSAL_LAST_COMMON_ERROR - 4)      /* -25 */
+#define CSAL_LAST_ERROR CSAL_ERROR_INVALID_SIBLING                   /* -25 */
 
 int csal_smt_update_root(uint8_t buffer[32], const csal_change_t *pairs,
                          const uint8_t *proof, uint32_t proof_length);
@@ -224,6 +245,9 @@ void _csal_parent_path(uint8_t key[32], uint8_t height) {
 
 int csal_smt_update_root(uint8_t buffer[32], const csal_change_t *pairs,
                          const uint8_t *proof, uint32_t proof_length) {
+  uint8_t zero_value[CSAL_VALUE_BYTES];
+  memset(zero_value, 0, CSAL_VALUE_BYTES);
+
   blake2b_state blake2b_ctx;
   uint8_t stack_keys[_CSAL_SMT_STACK_SIZE][CSAL_KEY_BYTES];
   uint8_t stack_values[_CSAL_SMT_STACK_SIZE][32];
@@ -242,12 +266,16 @@ int csal_smt_update_root(uint8_t buffer[32], const csal_change_t *pairs,
         }
         memcpy(stack_keys[stack_top], pairs->entries[leave_index].key,
                CSAL_KEY_BYTES);
-        blake2b_init(&blake2b_ctx, 32);
-        blake2b_update(&blake2b_ctx, pairs->entries[leave_index].key,
-                       CSAL_KEY_BYTES);
-        blake2b_update(&blake2b_ctx, pairs->entries[leave_index].value,
-                       CSAL_VALUE_BYTES);
-        blake2b_final(&blake2b_ctx, stack_values[stack_top], 32);
+        if (memcmp(pairs->entries[leave_index].value, zero_value, 32) == 0) {
+          memcpy(stack_values[stack_top], zero_value, 32);
+        } else {
+          blake2b_init(&blake2b_ctx, 32);
+          blake2b_update(&blake2b_ctx, pairs->entries[leave_index].key,
+                         CSAL_KEY_BYTES);
+          blake2b_update(&blake2b_ctx, pairs->entries[leave_index].value,
+                         CSAL_VALUE_BYTES);
+          blake2b_final(&blake2b_ctx, stack_values[stack_top], 32);
+        }
         stack_top++;
         leave_index++;
         break;
@@ -374,20 +402,23 @@ int csal_smt_verify(const uint8_t hash[32], const csal_change_t *pairs,
  * 6. The surrounding validator environment will operate only with stack memory,
  * meaning the VM is free to use heap space as it requires.
  */
-extern int execute_vm(const uint8_t *source, uint32_t length,
-                      csal_change_t *existing_values, csal_change_t *changes);
+extern int execute_vm(const uint8_t *source,
+                      uint32_t length,
+                      csal_change_t *existing_values,
+                      csal_change_t *changes,
+                      bool *destructed);
 
 #define MAXIMUM_READS 1024
 #define MAXIMUM_WRITES 1024
 #define SCRIPT_SIZE 128
 #define WITNESS_SIZE (300 * 1024)
 
-#define ERROR_BUFFER_NOT_ENOUGH (CSAL_LAST_ERROR - 1)
-#define ERROR_INVALID_DATA (CSAL_LAST_ERROR - 2)
-#define ERROR_EOF (CSAL_LAST_ERROR - 3)
-#define ERROR_TOO_MANY_CHANGES (CSAL_LAST_ERROR - 4)
-#define ERROR_UNSUPPORED_FLAGS (CSAL_LAST_ERROR - 5)
-#define ERROR_INVALID_ROOT_HASH (CSAL_LAST_ERROR - 6)
+#define ERROR_BUFFER_NOT_ENOUGH (CSAL_LAST_ERROR - 1) /* -26 */
+#define ERROR_INVALID_DATA (CSAL_LAST_ERROR - 2)      /* -27 */
+#define ERROR_EOF (CSAL_LAST_ERROR - 3)               /* -28 */
+#define ERROR_TOO_MANY_CHANGES (CSAL_LAST_ERROR - 4)  /* -29 */
+#define ERROR_UNSUPPORED_FLAGS (CSAL_LAST_ERROR - 5)  /* -30 */
+#define ERROR_INVALID_ROOT_HASH (CSAL_LAST_ERROR - 6) /* -31 */
 
 #define UNUSED_FLAGS 0xfffffffffffffffe
 
@@ -430,8 +461,9 @@ int reader_uint32(reader_t *reader, uint32_t *out) {
   return CKB_SUCCESS;
 }
 
+
 int main() {
-  /* The first 8 bytes of script contain flags for controlling script behaviors
+  /* Load script.args to check type id logic
    */
   uint8_t script[SCRIPT_SIZE];
   uint64_t len = SCRIPT_SIZE;
@@ -447,14 +479,10 @@ int main() {
   }
   mol_seg_t args_seg = MolReader_Script_get_args(&script_seg);
   mol_seg_t args_bytes_seg = MolReader_Bytes_raw_bytes(&args_seg);
-  if (args_bytes_seg.size < 8) {
+  if (args_bytes_seg.size < 20) {
     return ERROR_INVALID_DATA;
   }
-  uint64_t flags = *((uint64_t *)args_bytes_seg.ptr);
-  if ((flags & UNUSED_FLAGS) != 0) {
-    return ERROR_UNSUPPORED_FLAGS;
-  }
-  /* TODO: flag to enable type ID behavior */
+  // TODO: check this is a type id script
 
   /*
    * Witness shall contain the content used for validating account state change.
@@ -476,14 +504,10 @@ int main() {
     return ERROR_INVALID_DATA;
   }
   mol_seg_t content_seg;
-  if ((flags & FLAG_WITNESS_LOCATION) == FLAG_WITNESS_LOCATION_TYPE) {
-    if (cell_source == CKB_SOURCE_GROUP_OUTPUT) {
-      content_seg = MolReader_WitnessArgs_get_output_type(&witness_seg);
-    } else {
-      content_seg = MolReader_WitnessArgs_get_input_type(&witness_seg);
-    }
+  if (cell_source == CKB_SOURCE_GROUP_OUTPUT) {
+    content_seg = MolReader_WitnessArgs_get_output_type(&witness_seg);
   } else {
-    content_seg = MolReader_WitnessArgs_get_lock(&witness_seg);
+    content_seg = MolReader_WitnessArgs_get_input_type(&witness_seg);
   }
   if (MolReader_BytesOpt_is_none(&content_seg)) {
     return ERROR_INVALID_DATA;
@@ -509,20 +533,8 @@ int main() {
       return ERROR_INVALID_DATA;
     }
   }
-  uint8_t output_root_hash[32];
-  len = 32;
-  ret =
-      ckb_load_cell_data(output_root_hash, &len, 0, 0, CKB_SOURCE_GROUP_OUTPUT);
-  if (ret == CKB_INDEX_OUT_OF_BOUND && content_bytes_seg.size == 0) {
-    /* This is a special mode for destorying cells */
-    return CKB_SUCCESS;
-  }
-  if (ret != CKB_SUCCESS) {
-    return ret;
-  }
-  if (len < 32) {
-    return ERROR_INVALID_DATA;
-  }
+  debug_print_data(" input root:", input_root_hash, 32);
+
 
   /*
    * Parse VM source, read values, read proofs from witness content part.
@@ -538,10 +550,12 @@ int main() {
   if (ret != CKB_SUCCESS) {
     return ret;
   }
+  debug_print_data("source:", source, source_length);
 
   csal_entry_t read_entries[MAXIMUM_READS];
   csal_change_t read_changes;
   csal_change_init(&read_changes, read_entries, MAXIMUM_READS);
+  debug_print_int("csal_change_init(&read_changes);", 0);
   uint32_t reads = 0;
   ret = reader_uint32(&content_reader, &reads);
   if (ret != CKB_SUCCESS) {
@@ -560,6 +574,8 @@ int main() {
     if (ret != CKB_SUCCESS) {
       return ret;
     }
+    debug_print_data("read key  :", key, CSAL_KEY_BYTES);
+    debug_print_data("read value:", value, CSAL_VALUE_BYTES);
     ret = csal_change_insert(&read_changes, key, value);
     if (ret != CKB_SUCCESS) {
       return ret;
@@ -572,22 +588,50 @@ int main() {
     return ret;
   }
   ret = reader_bytes(&content_reader, proof_size, &proof);
+  debug_print_data("read proof:", proof, proof_size);
   if (ret != CKB_SUCCESS) {
     return ret;
   }
-  ret = csal_smt_verify(input_root_hash, &read_changes, proof, proof_size);
-  if (ret != CKB_SUCCESS) {
-    return ret;
+
+  if (proof_size > 0) {
+    ret = csal_smt_verify(input_root_hash, &read_changes, proof, proof_size);
+    debug_print_int("csal_smt_verify(input_root_hash);", ret);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
   }
 
   /* Now let's execute the VM. */
   csal_entry_t write_entries[MAXIMUM_WRITES];
   csal_change_t write_changes;
   csal_change_init(&write_changes, write_entries, MAXIMUM_WRITES);
-  ret = execute_vm(source, source_length, &read_changes, &write_changes);
+  debug_print_int("csal_change_init(&write_changes);", 0);
+
+  ckb_debug("execute_vm() start");
+  bool destructed = false;
+  ret = execute_vm(source, source_length, &read_changes, &write_changes, &destructed);
+  debug_print_int("execute_vm()", ret);
   if (ret != CKB_SUCCESS) {
     return ret;
   }
+
+  uint8_t output_root_hash[32];
+  len = 32;
+  ret =
+    ckb_load_cell_data(output_root_hash, &len, 0, 0, CKB_SOURCE_GROUP_OUTPUT);
+  if (ret == CKB_INDEX_OUT_OF_BOUND && destructed) {
+    /* This is a special mode for destorying cells */
+    ckb_debug("contract destructed");
+    return CKB_SUCCESS;
+  }
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  if (len < 32) {
+    return ERROR_INVALID_DATA;
+  }
+  debug_print_data("output root:", output_root_hash, 32);
+
   csal_change_organize(&write_changes);
 
   /*
@@ -595,18 +639,29 @@ int main() {
    * read values, we can reuse read_changes.
    */
   csal_change_init(&read_changes, read_entries, MAXIMUM_READS);
+  uint32_t write_changes_len;
+  ret = reader_uint32(&content_reader, &write_changes_len);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  debug_print_int("write_changes_len:", write_changes_len);
+  if (write_changes_len != write_changes.length) {
+    return -111;
+  }
   for (uint32_t i = 0; i < write_changes.length; i++) {
     uint8_t *old_value = NULL;
     ret = reader_bytes(&content_reader, CSAL_VALUE_BYTES, &old_value);
     if (ret != CKB_SUCCESS) {
       return ret;
     }
+    debug_print_data("write old_value:", old_value, CSAL_VALUE_BYTES);
     ret = csal_change_insert(&read_changes, write_changes.entries[i].key,
                              old_value);
     if (ret != CKB_SUCCESS) {
       return ret;
     }
   }
+
   /* Now let's read the proof for old values, and verify them */
   proof = NULL;
   proof_size = 0;
@@ -618,9 +673,13 @@ int main() {
   if (ret != CKB_SUCCESS) {
     return ret;
   }
-  ret = csal_smt_verify(input_root_hash, &read_changes, proof, proof_size);
-  if (ret != CKB_SUCCESS) {
-    return ret;
+  debug_print_data("write old proof:", proof, proof_size);
+  if (proof_size > 0) {
+    ret = csal_smt_verify(input_root_hash, &read_changes, proof, proof_size);
+    debug_print_int("csal_smt_verify(input_root_hash, &read_changes);", ret);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
   }
   /*
    * Now that we have a valid proof, we use it to generate new root hash
@@ -628,6 +687,7 @@ int main() {
    */
   ret =
       csal_smt_update_root(input_root_hash, &write_changes, proof, proof_size);
+  debug_print_int("csal_smt_update_root(input_root_hash, &write_changes);", ret);
   if (ret != CKB_SUCCESS) {
     return ret;
   }

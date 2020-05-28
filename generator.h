@@ -30,8 +30,11 @@ int csal_log(const uint8_t *data, uint32_t data_length);
 int csal_selfdestruct(const uint8_t *data, uint32_t data_length);
 
 /* See validator.h for explanations on execute_vm */
-extern int execute_vm(const uint8_t *source, uint32_t length,
-                      csal_change_t *existing_values, csal_change_t *changes);
+extern int execute_vm(const uint8_t *source,
+                      uint32_t length,
+                      csal_change_t *existing_values,
+                      csal_change_t *changes,
+                      bool *destructed);
 
 #include <ckb_syscalls.h>
 
@@ -81,7 +84,8 @@ int main(int argc, char *argv[]) {
    * via syscalls */
   csal_change_t existing_values = NULL;
   csal_change_t changes = NULL;
-  return execute_vm(source, length, &existing_values, &changes);
+  bool destructed;
+  return execute_vm(source, length, &existing_values, &changes, &destructed);
 }
 
 #define _CSAL_CHANGE_INSERT_SYSCALL_NUMBER 3073

@@ -1,5 +1,6 @@
 #include <evmone/evmone.h>
 #include <evmc/evmc.h>
+#include <blake2b.h>
 
 #ifdef BUILD_GENERATOR
 #include "generator.h"
@@ -44,7 +45,10 @@ int execute_vm(const uint8_t *source,
   const uint32_t input_size = *(uint32_t *)(code_data + code_size);
   const uint8_t *input_data = input_size > 0 ? code_data + (code_size + 4) : NULL;
 
-  check_params(call_kind, flags, depth, &sender, &destination, code_size, code_data, input_size, input_data);
+  int ret = verify_params(call_kind, flags, depth, &sender, &destination, code_size, code_data, input_size, input_data);
+  if (ret != 0) {
+    return ret;
+  }
 
   struct evmc_vm *vm = evmc_create_evmone();
   struct evmc_host_interface interface = { account_exists, get_storage, set_storage, get_balance, get_code_size, get_code_hash, copy_code, selfdestruct, NULL, get_tx_context, NULL, emit_log};
@@ -67,6 +71,7 @@ int execute_vm(const uint8_t *source,
 
   *destructed = context.destructed;
   return_result(&msg, &res);
+  verify_result(&msg, &res);
 
   return (int)res.status_code;
 }

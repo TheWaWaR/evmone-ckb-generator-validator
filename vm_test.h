@@ -162,7 +162,7 @@ void emit_log(struct evmc_host_context* context,
   }
 }
 
-inline void check_params(const uint8_t call_kind,
+inline int verify_params(const uint8_t call_kind,
                          const uint32_t flags,
                          const uint32_t depth,
                          const evmc_address *sender,
@@ -197,6 +197,7 @@ inline void check_params(const uint8_t call_kind,
     printf("%02x", *(code_data+i));
   }
   printf("\n");
+  return 0;
 }
 
 inline void context_init(struct evmc_host_context* context,
@@ -215,4 +216,8 @@ inline void return_result(const struct evmc_message *msg, const struct evmc_resu
     printf("%02x", *(res->output_data+i));
   }
   printf("\n");
+}
+
+inline int verify_result(const struct evmc_message *msg, const struct evmc_result *res) {
+  return 0;
 }

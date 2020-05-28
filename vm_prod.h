@@ -109,21 +109,68 @@ void emit_log(struct evmc_host_context* context,
   csal_log(buffer, offset);
 }
 
-
-inline void check_params(const uint8_t call_kind,
-                         const uint32_t flags,
-                         const uint32_t depth,
-                         const evmc_address *sender,
-                         const evmc_address *destination,
-                         const uint32_t code_size,
-                         const uint8_t *code_data,
-                         const uint32_t input_size,
-                         const uint8_t *input_data) {
+inline int verify_params(const uint8_t call_kind,
+                        const uint32_t flags,
+                        const uint32_t depth,
+                        const evmc_address *sender,
+                        const evmc_address *destination,
+                        const uint32_t code_size,
+                        const uint8_t *code_data,
+                        const uint32_t input_size,
+                        const uint8_t *input_data) {
+#ifdef BUILD_GENERATOR
+  /* Do nothing */
+  return 0;
+#else
   // TODO:
-  //   * check code_hash not changed
-  //   * check code_hash in data filed match the blake2b_h256(code_data)
-  //   * check the sender recovery from signature match the sender from program
-  //   * check selfdestruct called when output is missing
+  //   * verify the sender recovery from signature match the sender from program
+
+  /*
+   * - verify code_hash not changed
+   * - verify code_hash in data filed match the blake2b_h256(code_data)
+   */
+  if (call_kind != EVMC_CREATE) {
+    uint8_t code_hash[32];
+    blake2b_state blake2b_ctx;
+    blake2b_init(&blake2b_ctx, 32);
+    blake2b_update(&blake2b_ctx, code_data, code_size);
+    blake2b_final(&blake2b_ctx, code_hash, 32);
+    debug_print_data("code: ", code_data, code_size);
+    debug_print_data("code_hash: ", code_hash, 32);
+
+    int ret;
+    uint64_t len;
+    uint8_t hash[32];
+    len = 32;
+    ret = ckb_load_cell_data(hash, &len, 32, 0, CKB_SOURCE_GROUP_INPUT);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    if (len != 32) {
+      return -100;
+    }
+    debug_print_data("input code hash: ", hash, 32);
+    if (memcmp(code_hash, hash, 32) != 0) {
+      return -101;
+    }
+
+    len = 32;
+    ret = ckb_load_cell_data(hash, &len, 32, 0, CKB_SOURCE_GROUP_OUTPUT);
+    if (ret == CKB_SUCCESS) {
+      if (len != 32) {
+        return -102;
+      }
+      debug_print_data("output code hash: ", hash, 32);
+      if (memcmp(code_hash, hash, 32) != 0) {
+        return -103;
+      }
+    } else if (ret != CKB_INDEX_OUT_OF_BOUND) {
+      // Not destroy
+      return ret;
+    }
+  }
+  return 0;
+#endif
 }
 
 inline void context_init(struct evmc_host_context* context,
@@ -140,4 +187,42 @@ inline void return_result(const struct evmc_message *_msg, const struct evmc_res
   if (res->status_code == EVMC_SUCCESS) {
     csal_return(res->output_data, res->output_size);
   }
+}
+
+inline int verify_result(const struct evmc_message *msg, const struct evmc_result *res) {
+#ifdef BUILD_GENERATOR
+  /* Do nothing */
+  return 0;
+#else
+  if (msg->kind != EVMC_CREATE) {
+    return 0;
+  }
+
+  /*
+   * verify code_hash in output data filed match the blake2b_h256(res.output_data)
+   */
+  uint8_t code_hash[32];
+  blake2b_state blake2b_ctx;
+  blake2b_init(&blake2b_ctx, 32);
+  blake2b_update(&blake2b_ctx, res->output_data, res->output_size);
+  blake2b_final(&blake2b_ctx, code_hash, 32);
+  debug_print_data("code: ", res->output_data, res->output_size);
+  debug_print_data("code_hash: ", code_hash, 32);
+
+  int ret;
+  uint8_t hash[32];
+  uint64_t len = 32;
+  ret = ckb_load_cell_data(hash, &len, 32, 0, CKB_SOURCE_GROUP_OUTPUT);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  if (len != 32) {
+    return -110;
+  }
+  debug_print_data("output code hash: ", hash, 32);
+  if (memcmp(code_hash, hash, 32) != 0) {
+    return -111;
+  }
+  return 0;
+#endif
 }

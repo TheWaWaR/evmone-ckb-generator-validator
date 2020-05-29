@@ -1,4 +1,5 @@
 #include <evmc/evmc.h>
+#include "secp256k1_helper.h"
 
 #ifdef BUILD_GENERATOR
 #include "generator.h"
@@ -109,6 +110,33 @@ void emit_log(struct evmc_host_context* context,
   csal_log(buffer, offset);
 }
 
+#ifndef BUILD_GENERATOR
+int get_script_args(uint8_t *script_data, mol_seg_t *args_bytes_seg) {
+  mol_seg_t script_seg;
+  script_seg.ptr = (uint8_t *)script;
+  script_seg.size = len;
+  if (MolReader_Script_verify(&script_seg, false) != MOL_OK) {
+    return ERROR_INVALID_DATA;
+  }
+  mol_seg_t args_seg = MolReader_Script_get_args(&script_seg);
+  *args_bytes_seg = MolReader_Bytes_raw_bytes(&args_seg);
+  if (args_bytes_seg->size != CSAL_SCRIPT_ARGS_LEN) {
+    return ERROR_INVALID_DATA;
+  }
+  return 0;
+}
+int load_type_script_args(mol_seg_t *args_bytes_seg, size_t index, size_t source) {
+  int ret;
+  uint8_t type_script[SCRIPT_SIZE];
+  uint8_t len = SCRIPT_SIZE;
+  ret = ckb_load_cell_by_field(type_script, &len, 0, index, source, CKB_CELL_FIELD_TYPE);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  return get_script_args(type_script, args_bytes_seg);
+}
+#endif
+
 inline int verify_params(const uint8_t call_kind,
                         const uint32_t flags,
                         const uint32_t depth,
@@ -124,6 +152,85 @@ inline int verify_params(const uint8_t call_kind,
 #else
   // TODO:
   //   * verify the sender recovery from signature match the sender from program
+  int ret;
+  uint64_t len;
+  blake2b_state blake2b_ctx;
+
+  uint8_t witness[WITNESS_SIZE];
+  size_t cell_source = 0;
+  len = WITNESS_SIZE;
+  // TODO: support contract call contract
+  ret = ckb_load_actual_type_witness(witness, &len, 0, &cell_source);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  mol_seg_t witness_seg;
+  witness_seg.ptr = (uint8_t *)witness;
+  witness_seg.size = len;
+  debug_print_int("load witness:", (int) witness_seg.size);
+  if (MolReader_WitnessArgs_verify(&witness_seg, false) != MOL_OK) {
+    return ERROR_INVALID_DATA;
+  }
+  mol_seg_t content_seg;
+  if (cell_source == CKB_SOURCE_GROUP_OUTPUT) {
+    content_seg = MolReader_WitnessArgs_get_output_type(&witness_seg);
+  } else {
+    content_seg = MolReader_WitnessArgs_get_input_type(&witness_seg);
+  }
+  if (MolReader_BytesOpt_is_none(&content_seg)) {
+    return ERROR_INVALID_DATA;
+  }
+  const mol_seg_t content_bytes_seg = MolReader_Bytes_raw_bytes(&content_seg);
+
+  uint8_t zero_signature[65];
+  memset(zero_value, 0, 65);
+  uint8_t signature[65];
+  memcpy(signature, content_bytes_seg.ptr + 4, 65);
+  if (memcmp(signature, zero_signature) == 0) {
+    // contract call contract
+    uint8_t script[SCRIPT_SIZE];
+    len = SCRIPT_SIZE;
+    ret = ckb_checked_load_script(script, &len, 0);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    mol_seg_t current_args_bytes_seg;
+    ret = get_script_args(script, &current_args_bytes_seg);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+
+    bool found_other_contract = false;
+    size_t index = 0;
+    mol_seg_t args_bytes_seg;
+    while(1) {
+      load_type_script_args(&args_bytes_seg, index, CKB_SOURCE_INPUT);
+      if (memcmp(args_bytes_seg.ptr, current_args_bytes_seg.ptr, CSAL_SCRIPT_ARGS_LEN) != 0
+          && memcmp(args_bytes_seg.ptr, sender->bytes, CSAL_SCRIPT_ARGS_LEN) == 0) {
+        found_other_contract = true;
+        break;
+      }
+      index += 1;
+    }
+    if (!found_other_contract) {
+      index = 0;
+      while(1) {
+        load_type_script_args(&args_bytes_seg, index, CKB_SOURCE_OUTPUT);
+        if (memcmp(args_bytes_seg.ptr, current_args_bytes_seg.ptr, CSAL_SCRIPT_ARGS_LEN) != 0
+            && memcmp(args_bytes_seg.ptr, sender->bytes, CSAL_SCRIPT_ARGS_LEN) == 0) {
+          found_other_contract = true;
+          break;
+        }
+        index += 1;
+      }
+    }
+    if (!found_other_contract) {
+      // Not a contract sender but with zero signature
+      return -99;
+    }
+  } else {
+    // TODO: EoA account call contract
+  }
 
   /*
    * - verify code_hash not changed
@@ -131,15 +238,12 @@ inline int verify_params(const uint8_t call_kind,
    */
   if (call_kind != EVMC_CREATE) {
     uint8_t code_hash[32];
-    blake2b_state blake2b_ctx;
     blake2b_init(&blake2b_ctx, 32);
     blake2b_update(&blake2b_ctx, code_data, code_size);
     blake2b_final(&blake2b_ctx, code_hash, 32);
     debug_print_data("code: ", code_data, code_size);
     debug_print_data("code_hash: ", code_hash, 32);
 
-    int ret;
-    uint64_t len;
     uint8_t hash[32];
     len = 32;
     ret = ckb_load_cell_data(hash, &len, 32, 0, CKB_SOURCE_GROUP_INPUT);

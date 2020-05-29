@@ -54,7 +54,7 @@ int main(int argc, char *argv[]) {
   const char *length_hex = argv[1];
   const char *binary_hex = argv[2];
 
-  char buffer[8192];
+  char buffer[100 * 1024];
   char part1;
   char part2;
   for (size_t i = 0; i < 4; i++) {

@@ -7,9 +7,11 @@ CFLAGS_CKB_STD = -Ideps/ckb-c-stdlib
 CFLAGS_INTX := -Ideps/intx/lib/intx -Ideps/intx/include
 CFLAGS_ETHASH := -Ideps/ethash/include -Ideps/ethash/lib/ethash -Ideps/ethash/lib/keccak -Ideps/ethash/lib/support
 CFLAGS_EVMONE := -Ideps/evmone/lib/evmone -Ideps/evmone/include -Ideps/evmone/evmc/include
-CFLAGS := -O3 $(CFLAGS_CKB_STD) $(CFLAGS_EVMONE) $(CFLAGS_INTX) $(CFLAGS_ETHASH) -Wall
+CFLAGS_SECP := -isystem deps/secp256k1/src -isystem deps/secp256k1
+CFLAGS := -O3 $(CFLAGS_CKB_STD) $(CFLAGS_EVMONE) $(CFLAGS_INTX) $(CFLAGS_ETHASH) $(CFLAGS_SECP) -Wall
 CXXFLAGS := $(CFLAGS) -std=c++1z
 LDFLAGS := -fdata-sections -ffunction-sections -Wl,--gc-sections
+SECP256K1_SRC := deps/secp256k1/src/ecmult_static_pre_context.h
 
 ALL_OBJS := build/evmone.o build/analysis.o build/execution.o build/instructions.o build/div.o build/keccak.o build/keccakf800.o build/keccakf1600.o
 
@@ -21,8 +23,8 @@ all-via-docker:
 	mkdir -p build
 	docker run --rm -v `pwd`:/code ${BUILDER_DOCKER} bash -c "cd /code && make"
 
-build/validator: vm.c vm_prod.h $(ALL_OBJS)
-	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ vm.c $(ALL_OBJS)
+build/validator: vm.c vm_prod.h build/secp256k1_data_info.h $(SECP256K1_SRC) $(ALL_OBJS)
+	$(CXX) $(CFLAGS) $(LDFLAGS) -Ibuild -o $@ vm.c $(ALL_OBJS)
 	$(OBJCOPY) --strip-debug --strip-all $@
 
 build/generator: vm.c vm_prod.h $(ALL_OBJS)
@@ -55,8 +57,23 @@ build/keccakf800.o: deps/ethash/lib/keccak/keccakf800.c
 build/div.o: deps/intx/lib/intx/div.cpp
 	$(CXX) $(CFLAGS) $(LDFLAGS) -c -o $@ $<
 
+# secp256k1
+build/secp256k1_data_info.h: build/dump_secp256k1_data
+	$<
+
+build/dump_secp256k1_data: dump_secp256k1_data.c $(SECP256K1_SRC)
+	mkdir -p build
+	gcc $(CFLAGS_SECP) $(CFLAGS_CKB_STD) -o $@ $<
+
+$(SECP256K1_SRC):
+	cd deps/secp256k1 && \
+		./autogen.sh && \
+		CC=$(CC) LD=$(LD) ./configure --with-bignum=no --enable-ecmult-static-precomputation --enable-endomorphism --enable-module-recovery --host=$(TARGET) && \
+		make src/ecmult_static_pre_context.h src/ecmult_static_context.h
+
 clean:
 	rm -rf build/*
+	cd deps/secp256k1 && [ -f "Makefile" ] && make clean
 
 clean-bin:
 	rm -rf build/generator_test build/generator build/validator

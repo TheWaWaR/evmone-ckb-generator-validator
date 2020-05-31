@@ -11,3 +11,6 @@
 	path = deps/ethash
 	url = https://github.com/TheWaWaR/ethash.git
 	branch = support-riscv
+[submodule "deps/secp256k1"]
+	path = deps/secp256k1
+	url = https://github.com/nervosnetwork/secp256k1

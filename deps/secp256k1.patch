@@ -1,0 +1,26 @@
+diff --git a/src/ecmult.h b/src/ecmult.h
+index c9b1982..5f8365c 100644
+--- a/src/ecmult.h
++++ b/src/ecmult.h
+@@ -20,7 +20,7 @@ typedef struct {
+ #endif
+ } secp256k1_ecmult_context;
+ 
+-static const size_t SECP256K1_ECMULT_CONTEXT_PREALLOCATED_SIZE;
++/* static const size_t SECP256K1_ECMULT_CONTEXT_PREALLOCATED_SIZE; */
+ static void secp256k1_ecmult_context_init(secp256k1_ecmult_context *ctx);
+ static void secp256k1_ecmult_context_build(secp256k1_ecmult_context *ctx, void **prealloc);
+ static void secp256k1_ecmult_context_finalize_memcpy(secp256k1_ecmult_context *dst, const secp256k1_ecmult_context *src);
+diff --git a/src/ecmult_gen.h b/src/ecmult_gen.h
+index b136e94..5bfa1b8 100644
+--- a/src/ecmult_gen.h
++++ b/src/ecmult_gen.h
+@@ -28,7 +28,7 @@ typedef struct {
+     secp256k1_gej initial;
+ } secp256k1_ecmult_gen_context;
+ 
+-static const size_t SECP256K1_ECMULT_GEN_CONTEXT_PREALLOCATED_SIZE;
++/* static const size_t SECP256K1_ECMULT_GEN_CONTEXT_PREALLOCATED_SIZE; */
+ static void secp256k1_ecmult_gen_context_init(secp256k1_ecmult_gen_context* ctx);
+ static void secp256k1_ecmult_gen_context_build(secp256k1_ecmult_gen_context* ctx, void **prealloc);
+ static void secp256k1_ecmult_gen_context_finalize_memcpy(secp256k1_ecmult_gen_context *dst, const secp256k1_ecmult_gen_context* src);

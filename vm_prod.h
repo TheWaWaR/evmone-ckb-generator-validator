@@ -1,11 +1,11 @@
 #include <evmc/evmc.h>
-#include "secp256k1_helper.h"
 
 #ifdef BUILD_GENERATOR
 #include "generator.h"
 #else
 #define CSAL_VALIDATOR_TYPE 1
 #include "validator.h"
+#include "secp256k1_helper.h"
 #endif
 
 struct evmc_host_context {
@@ -111,10 +111,10 @@ void emit_log(struct evmc_host_context* context,
 }
 
 #ifndef BUILD_GENERATOR
-int get_script_args(uint8_t *script_data, mol_seg_t *args_bytes_seg) {
+int get_script_args(uint8_t *script_data, size_t script_size, mol_seg_t *args_bytes_seg) {
   mol_seg_t script_seg;
-  script_seg.ptr = (uint8_t *)script;
-  script_seg.size = len;
+  script_seg.ptr = (uint8_t *)script_data;
+  script_seg.size = script_size;
   if (MolReader_Script_verify(&script_seg, false) != MOL_OK) {
     return ERROR_INVALID_DATA;
   }
@@ -128,12 +128,12 @@ int get_script_args(uint8_t *script_data, mol_seg_t *args_bytes_seg) {
 int load_type_script_args(mol_seg_t *args_bytes_seg, size_t index, size_t source) {
   int ret;
   uint8_t type_script[SCRIPT_SIZE];
-  uint8_t len = SCRIPT_SIZE;
+  uint64_t len = SCRIPT_SIZE;
   ret = ckb_load_cell_by_field(type_script, &len, 0, index, source, CKB_CELL_FIELD_TYPE);
   if (ret != CKB_SUCCESS) {
     return ret;
   }
-  return get_script_args(type_script, args_bytes_seg);
+  return get_script_args(type_script, len, args_bytes_seg);
 }
 #endif
 
@@ -150,8 +150,6 @@ inline int verify_params(const uint8_t call_kind,
   /* Do nothing */
   return 0;
 #else
-  // TODO:
-  //   * verify the sender recovery from signature match the sender from program
   int ret;
   uint64_t len;
   blake2b_state blake2b_ctx;
@@ -183,10 +181,11 @@ inline int verify_params(const uint8_t call_kind,
   const mol_seg_t content_bytes_seg = MolReader_Bytes_raw_bytes(&content_seg);
 
   uint8_t zero_signature[65];
-  memset(zero_value, 0, 65);
-  uint8_t signature[65];
-  memcpy(signature, content_bytes_seg.ptr + 4, 65);
-  if (memcmp(signature, zero_signature) == 0) {
+  memset(zero_signature, 0, 65);
+  uint8_t signature_data[65];
+  memcpy(signature_data, content_bytes_seg.ptr + 4, 65);
+  if (memcmp(signature_data, zero_signature, 65) == 0) {
+    ckb_debug("verify contract sender signature");
     // contract call contract
     uint8_t script[SCRIPT_SIZE];
     len = SCRIPT_SIZE;
@@ -195,7 +194,7 @@ inline int verify_params(const uint8_t call_kind,
       return ret;
     }
     mol_seg_t current_args_bytes_seg;
-    ret = get_script_args(script, &current_args_bytes_seg);
+    ret = get_script_args(script, len, &current_args_bytes_seg);
     if (ret != CKB_SUCCESS) {
       return ret;
     }
@@ -226,10 +225,59 @@ inline int verify_params(const uint8_t call_kind,
     }
     if (!found_other_contract) {
       // Not a contract sender but with zero signature
-      return -99;
+      return -90;
     }
   } else {
-    // TODO: EoA account call contract
+    // Verify EoA account call contract
+    ckb_debug("Verify EoA sender signature");
+    memset(content_bytes_seg.ptr + 4, 0, 65);
+    uint8_t sign_message[32];
+    uint8_t tx_hash[32];
+    len = 32;
+    ret = ckb_load_tx_hash(tx_hash, &len, 0);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    blake2b_init(&blake2b_ctx, 32);
+    blake2b_update(&blake2b_ctx, tx_hash, 32);
+    blake2b_update(&blake2b_ctx, content_bytes_seg.ptr, content_bytes_seg.size);
+    blake2b_final(&blake2b_ctx, sign_message, 32);
+
+    /* Load signature */
+    secp256k1_context context;
+    uint8_t secp_data[CKB_SECP256K1_DATA_SIZE];
+    ret = ckb_secp256k1_custom_verify_only_initialize(&context, secp_data);
+    if (ret != 0) {
+      return ret;
+    }
+
+    int recid = (int)signature_data[64];
+    secp256k1_ecdsa_recoverable_signature signature;
+    if (secp256k1_ecdsa_recoverable_signature_parse_compact(&context, &signature, signature_data, recid) == 0) {
+      return -91;
+    }
+
+    /* Recover pubkey */
+    secp256k1_pubkey pubkey;
+    if (secp256k1_ecdsa_recover(&context, &pubkey, &signature, sign_message) != 1) {
+      return -92;
+    }
+
+    /* Check pubkey hash */
+    uint8_t temp[32768];
+    size_t pubkey_size = 33;
+    if (secp256k1_ec_pubkey_serialize(&context, temp,
+                                      &pubkey_size, &pubkey,
+                                      SECP256K1_EC_COMPRESSED) != 1) {
+      return -93;
+    }
+    blake2b_init(&blake2b_ctx, 32);
+    blake2b_update(&blake2b_ctx, temp, pubkey_size);
+    blake2b_final(&blake2b_ctx, temp, 32);
+
+    if (memcmp(sender->bytes, temp, 20) != 0) {
+      return -94;
+    }
   }
 
   /*

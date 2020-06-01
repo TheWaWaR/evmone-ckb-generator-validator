@@ -66,18 +66,6 @@ int csal_change_fetch(csal_change_t *state, const uint8_t key[CSAL_KEY_BYTES],
                       uint8_t value[CSAL_VALUE_BYTES]);
 void csal_change_organize(csal_change_t *state);
 
-int csal_return(const uint8_t *data, uint32_t data_length) {
-  // TODO: check return data
-  return 0;
-}
-int csal_log(const uint8_t *data, uint32_t data_length) {
-  return 0;
-}
-int csal_selfdestruct(const uint8_t *data, uint32_t data_length) {
-  // TODO: check selfdestruct
-  return 0;
-}
-
 static char debug_buffer[1024];
 static void debug_print_data(const char *prefix,
                              const uint8_t *data,
@@ -235,6 +223,22 @@ void _csal_parent_path(uint8_t key[32], uint8_t height) {
     _csal_copy_bits(key, height + 1);
   }
 }
+void _csal_merge(blake2b_state *blake2b_ctx,
+                 const uint8_t zero_value[32],
+                 const uint8_t lhs[32],
+                 const uint8_t rhs[32],
+                 uint8_t output[32]) {
+  if (memcmp(lhs, zero_value, 32) == 0) {
+    memcpy(output, rhs, 32);
+  } else if (memcmp(rhs, zero_value, 32) == 0) {
+    memcpy(output, lhs, 32);
+  } else {
+    blake2b_init(blake2b_ctx, 32);
+    blake2b_update(blake2b_ctx, lhs, 32);
+    blake2b_update(blake2b_ctx, rhs, 32);
+    blake2b_final(blake2b_ctx, output, 32);
+  }
+}
 
 /*
  * Theoretically, a stack size of x should be able to process as many as
@@ -291,15 +295,11 @@ int csal_smt_update_root(uint8_t buffer[32], const csal_change_t *pairs,
         proof_index += 32;
         uint8_t *key = stack_keys[stack_top - 1];
         uint8_t *value = stack_values[stack_top - 1];
-        blake2b_init(&blake2b_ctx, 32);
         if (_csal_get_bit(key, height)) {
-          blake2b_update(&blake2b_ctx, current_proof, 32);
-          blake2b_update(&blake2b_ctx, value, 32);
+          _csal_merge(&blake2b_ctx, zero_value, current_proof, value, value);
         } else {
-          blake2b_update(&blake2b_ctx, value, 32);
-          blake2b_update(&blake2b_ctx, current_proof, 32);
+          _csal_merge(&blake2b_ctx, zero_value, value, current_proof, value);
         }
-        blake2b_final(&blake2b_ctx, value, 32);
         _csal_parent_path(key, height);
       } break;
       case 0x48: {
@@ -327,16 +327,14 @@ int csal_smt_update_root(uint8_t buffer[32], const csal_change_t *pairs,
         if (memcmp(sibling_key_a, key_b, 32) != 0 || (a_set == b_set)) {
           return CSAL_ERROR_INVALID_SIBLING;
         }
-        blake2b_init(&blake2b_ctx, 32);
-        if (a_set) {
-          blake2b_update(&blake2b_ctx, value_b, 32);
-          blake2b_update(&blake2b_ctx, value_a, 32);
-        } else {
-          blake2b_update(&blake2b_ctx, value_a, 32);
-          blake2b_update(&blake2b_ctx, value_b, 32);
-        }
         /* Top-of-stack key is already updated to parent_key_a */
-        blake2b_final(&blake2b_ctx, value_a, 32);
+        if (a_set) {
+          _csal_merge(&blake2b_ctx, zero_value, value_b, value_a, value_a);
+        } else {
+          _csal_merge(&blake2b_ctx, zero_value, value_a, value_b, value_a);
+        }
+        debug_print_data("\nparent_key_a:", key_a, 32);
+        debug_print_data("\nparent      :", value_a, 32);
         stack_top++;
       } break;
       default:

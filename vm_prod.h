@@ -8,6 +8,46 @@
 #include "secp256k1_helper.h"
 #endif
 
+/* Validator */
+#ifndef BUILD_GENERATOR
+int csal_return(const uint8_t *data, uint32_t data_length) {
+  // TODO: check return data
+  return 0;
+}
+int csal_log(const uint8_t *data, uint32_t data_length) {
+  return 0;
+}
+int csal_selfdestruct(const uint8_t *data, uint32_t data_length) {
+  // TODO: check selfdestruct
+  return 0;
+}
+
+int get_script_args(uint8_t *script_data, size_t script_size, mol_seg_t *args_bytes_seg) {
+  mol_seg_t script_seg;
+  script_seg.ptr = (uint8_t *)script_data;
+  script_seg.size = script_size;
+  if (MolReader_Script_verify(&script_seg, false) != MOL_OK) {
+    return ERROR_INVALID_DATA;
+  }
+  mol_seg_t args_seg = MolReader_Script_get_args(&script_seg);
+  *args_bytes_seg = MolReader_Bytes_raw_bytes(&args_seg);
+  if (args_bytes_seg->size != CSAL_SCRIPT_ARGS_LEN) {
+    return ERROR_INVALID_DATA;
+  }
+  return 0;
+}
+int load_type_script_args(mol_seg_t *args_bytes_seg, size_t index, size_t source) {
+  int ret;
+  uint8_t type_script[SCRIPT_SIZE];
+  uint64_t len = SCRIPT_SIZE;
+  ret = ckb_load_cell_by_field(type_script, &len, 0, index, source, CKB_CELL_FIELD_TYPE);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
+  return get_script_args(type_script, len, args_bytes_seg);
+}
+#endif
+
 struct evmc_host_context {
   csal_change_t *existing_values;
   csal_change_t *changes;
@@ -110,32 +150,6 @@ void emit_log(struct evmc_host_context* context,
   csal_log(buffer, offset);
 }
 
-#ifndef BUILD_GENERATOR
-int get_script_args(uint8_t *script_data, size_t script_size, mol_seg_t *args_bytes_seg) {
-  mol_seg_t script_seg;
-  script_seg.ptr = (uint8_t *)script_data;
-  script_seg.size = script_size;
-  if (MolReader_Script_verify(&script_seg, false) != MOL_OK) {
-    return ERROR_INVALID_DATA;
-  }
-  mol_seg_t args_seg = MolReader_Script_get_args(&script_seg);
-  *args_bytes_seg = MolReader_Bytes_raw_bytes(&args_seg);
-  if (args_bytes_seg->size != CSAL_SCRIPT_ARGS_LEN) {
-    return ERROR_INVALID_DATA;
-  }
-  return 0;
-}
-int load_type_script_args(mol_seg_t *args_bytes_seg, size_t index, size_t source) {
-  int ret;
-  uint8_t type_script[SCRIPT_SIZE];
-  uint64_t len = SCRIPT_SIZE;
-  ret = ckb_load_cell_by_field(type_script, &len, 0, index, source, CKB_CELL_FIELD_TYPE);
-  if (ret != CKB_SUCCESS) {
-    return ret;
-  }
-  return get_script_args(type_script, len, args_bytes_seg);
-}
-#endif
 
 inline int verify_params(const uint8_t call_kind,
                         const uint32_t flags,

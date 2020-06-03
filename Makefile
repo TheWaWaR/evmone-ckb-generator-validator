@@ -23,11 +23,11 @@ all-via-docker:
 	mkdir -p build
 	docker run --rm -v `pwd`:/code ${BUILDER_DOCKER} bash -c "cd /code && make"
 
-build/validator: vm.c vm_prod.h build/secp256k1_data_info.h $(SECP256K1_SRC) $(ALL_OBJS)
+build/validator: vm.c vm_validator.h build/secp256k1_data_info.h $(SECP256K1_SRC) $(ALL_OBJS)
 	$(CXX) $(CFLAGS) $(LDFLAGS) -Ibuild -o $@ vm.c $(ALL_OBJS)
 	$(OBJCOPY) --strip-debug --strip-all $@
 
-build/generator: vm.c vm_prod.h $(ALL_OBJS)
+build/generator: vm.c vm_generator.h $(ALL_OBJS)
 	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ vm.c $(ALL_OBJS) -DBUILD_GENERATOR
 	$(OBJCOPY) --strip-debug --strip-all $@
 

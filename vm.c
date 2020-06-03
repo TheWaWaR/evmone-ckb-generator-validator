@@ -11,8 +11,10 @@
 
 #ifdef TEST_BIN
 #include "vm_test.h"
+#elif defined(BUILD_GENERATOR)
+#include "vm_generator.h"
 #else
-#include "vm_prod.h"
+#include "vm_validator.h"
 #endif
 
 #define SIGNATURE_LEN 65
@@ -53,7 +55,7 @@ int execute_vm(const uint8_t *source,
   struct evmc_vm *vm = evmc_create_evmone();
   struct evmc_host_interface interface = { account_exists, get_storage, set_storage, get_balance, get_code_size, get_code_hash, copy_code, selfdestruct, NULL, get_tx_context, NULL, emit_log};
   struct evmc_host_context context;
-  context_init(&context, existing_values, changes, sender);
+  context_init(&context, vm, &interface, sender, existing_values, changes);
 
   struct evmc_message msg;
   msg.kind = (evmc_call_kind) call_kind;

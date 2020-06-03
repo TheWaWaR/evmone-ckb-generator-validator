@@ -7,11 +7,15 @@
 #include "validator.h"
 #endif
 
+void return_result(const struct evmc_message *msg, const struct evmc_result *res);
+
 struct evmc_host_context {
   evmc_address address;
   evmc_bytes32 key;
   evmc_bytes32 value;
   evmc_address tx_origin;
+  struct evmc_host_interface *interface;
+  struct evmc_vm *vm;
   bool destructed;
 };
 
@@ -132,6 +136,24 @@ void selfdestruct(struct evmc_host_context* context,
   }
   printf("\n");
 }
+
+struct evmc_result call(struct evmc_host_context* context,
+                        const struct evmc_message* msg) {
+  printf("[call] destination: ");
+  for (size_t i = 0; i < 20; i++) {
+    printf("%02x", *(msg->destination.bytes+i));
+  }
+  printf("\n");
+  bool destructed = context->destructed;
+  /* FIXME: the code_data/code_size is wrong */
+  struct evmc_result res = context->vm->execute(context->vm, context->interface, context,
+                                                EVMC_MAX_REVISION, msg, NULL, 0);
+  printf("destructed: %s\n", context->destructed ? "true" : "false");
+  context->destructed = destructed;
+  return_result(msg, &res);
+  return res;
+}
+
 void emit_log(struct evmc_host_context* context,
               const evmc_address* address,
               const uint8_t* data,
@@ -201,10 +223,14 @@ inline int verify_params(const uint8_t call_kind,
 }
 
 inline void context_init(struct evmc_host_context* context,
+                         struct evmc_vm *vm,
+                         struct evmc_host_interface *interface,
+                         const evmc_address tx_origin,
                          csal_change_t *_existing_values,
-                         csal_change_t *changes,
-                         evmc_address tx_origin) {
+                         csal_change_t *_changes) {
   /* Do nothing */
+  context->vm = vm;
+  context->interface = interface;
   context->destructed = false;
 }
 

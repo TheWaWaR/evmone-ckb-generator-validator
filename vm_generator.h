@@ -129,13 +129,6 @@ struct evmc_result call(struct evmc_host_context* context,
   csal_call(result_data, msg_data);
 
   uint8_t *result_ptr = result_data;
-  int32_t status_code_value = *((int32_t *)result_ptr);
-  result_ptr += 4;
-  enum evmc_status_code status_code = (enum evmc_status_code)status_code_value;
-
-  int64_t gas_left = *((int64_t *)result_ptr);
-  result_ptr += 8;
-
   int32_t output_size_32 = *((int32_t *)result_ptr);
   result_ptr += 4;
 
@@ -148,10 +141,8 @@ struct evmc_result call(struct evmc_host_context* context,
   memcpy(&create_address.bytes, result_ptr, 20);
   result_ptr += 20;
 
-  uint8_t padding[4] = { 0 };
-  memcpy(padding, result_ptr, 4);
   struct evmc_result res = { status_code, gas_left, output_data, output_size, release_result, create_address };
-  memcpy(res.padding, padding, 4);
+  memset(res.padding, 0, 4);
   return res;
 }
 

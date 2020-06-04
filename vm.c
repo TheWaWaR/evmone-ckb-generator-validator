@@ -26,7 +26,8 @@
 #define CALL_KIND_OFFSET (SIGNATURE_LEN + PROGRAM_LEN)
 #define FLAGS_OFFSET (CALL_KIND_OFFSET + CALL_KIND_LEN)
 #define DEPTH_OFFSET (FLAGS_OFFSET + FLAGS_LEN)
-#define SENDER_OFFSET (DEPTH_OFFSET + DEPTH_LEN)
+#define TX_ORIGIN_OFFSET (DEPTH_OFFSET + DEPTH_LEN)
+#define SENDER_OFFSET (TX_ORIGIN_OFFSET + ADDRESS_LEN)
 #define DESTINATION_OFFSET (SENDER_OFFSET + ADDRESS_LEN)
 #define CODE_OFFSET (DESTINATION_OFFSET + ADDRESS_LEN)
 
@@ -40,6 +41,7 @@ int execute_vm(const uint8_t *source,
   const uint8_t call_kind = source[CALL_KIND_OFFSET];
   const uint32_t flags = *(uint32_t *)(source + FLAGS_OFFSET);
   const uint32_t depth = *(uint32_t *)(source + DEPTH_OFFSET);
+  const evmc_address tx_origin = *(evmc_address *)(source + TX_ORIGIN_OFFSET);
   const evmc_address sender = *(evmc_address *)(source + SENDER_OFFSET);
   const evmc_address destination = *(evmc_address *)(source + DESTINATION_OFFSET);
   const uint32_t code_size = *(uint32_t *)(source + CODE_OFFSET);
@@ -55,7 +57,7 @@ int execute_vm(const uint8_t *source,
   struct evmc_vm *vm = evmc_create_evmone();
   struct evmc_host_interface interface = { account_exists, get_storage, set_storage, get_balance, get_code_size, get_code_hash, copy_code, selfdestruct, NULL, get_tx_context, NULL, emit_log};
   struct evmc_host_context context;
-  context_init(&context, vm, &interface, sender, existing_values, changes);
+  context_init(&context, vm, &interface, tx_origin, existing_values, changes);
 
   struct evmc_message msg;
   msg.kind = (evmc_call_kind) call_kind;

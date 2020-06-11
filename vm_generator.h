@@ -141,7 +141,8 @@ struct evmc_result call(struct evmc_host_context* context,
   memcpy(&create_address.bytes, result_ptr, 20);
   result_ptr += 20;
 
-  struct evmc_result res = { status_code, gas_left, output_data, output_size, release_result, create_address };
+
+  struct evmc_result res = { EVMC_SUCCESS, msg->gas, output_data, output_size, release_result, create_address };
   memset(res.padding, 0, 4);
   return res;
 }
@@ -176,15 +177,17 @@ void emit_log(struct evmc_host_context* context,
 }
 
 
-inline int verify_params(const uint8_t call_kind,
-                        const uint32_t flags,
-                        const uint32_t depth,
-                        const evmc_address *sender,
-                        const evmc_address *destination,
-                        const uint32_t code_size,
-                        const uint8_t *code_data,
-                        const uint32_t input_size,
-                        const uint8_t *input_data) {
+inline int verify_params(const uint8_t *signature_data,
+                         const uint8_t call_kind,
+                         const uint32_t flags,
+                         const uint32_t depth,
+                         const evmc_address *tx_origin,
+                         const evmc_address *sender,
+                         const evmc_address *destination,
+                         const uint32_t code_size,
+                         const uint8_t *code_data,
+                         const uint32_t input_size,
+                         const uint8_t *input_data) {
   /* Do nothing */
   return 0;
 }
@@ -207,7 +210,12 @@ inline void return_result(const struct evmc_message *_msg, const struct evmc_res
   }
 }
 
-inline int verify_result(const struct evmc_message *msg, const struct evmc_result *res) {
+inline int verify_result(struct evmc_host_context* context,
+                         const struct evmc_message *msg,
+                         const struct evmc_result *res,
+                         const uint8_t *return_data,
+                         const size_t return_data_size,
+                         const evmc_address *beneficiary) {
   /* Do nothing */
   return 0;
 }

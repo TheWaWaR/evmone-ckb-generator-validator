@@ -38,6 +38,8 @@ int execute_vm(const uint8_t *source,
                csal_change_t *changes,
                bool *destructed)
 {
+  const uint8_t *signature = source;
+  const uint32_t program_len = *(uint32_t *)(source + SIGNATURE_LEN);
   const uint8_t call_kind = source[CALL_KIND_OFFSET];
   const uint32_t flags = *(uint32_t *)(source + FLAGS_OFFSET);
   const uint32_t depth = *(uint32_t *)(source + DEPTH_OFFSET);
@@ -49,7 +51,14 @@ int execute_vm(const uint8_t *source,
   const uint32_t input_size = *(uint32_t *)(code_data + code_size);
   const uint8_t *input_data = input_size > 0 ? code_data + (code_size + 4) : NULL;
 
-  int ret = verify_params(call_kind, flags, depth, &sender, &destination, code_size, code_data, input_size, input_data);
+  const uint8_t *other_data = source + SIGNATURE_LEN + PROGRAM_LEN + program_len;
+  const uint32_t return_data_len = *(uint32_t *)other_data;
+  const size_t return_data_size = (size_t)return_data_len;
+  const uint8_t *return_data = other_data + 4;
+  const evmc_address beneficiary = *(evmc_address *)(return_data + return_data_size);
+
+  int ret = verify_params(signature, call_kind, flags, depth, &tx_origin, &sender, &destination,
+                          code_size, code_data, input_size, input_data);
   if (ret != 0) {
     return ret;
   }
@@ -75,7 +84,7 @@ int execute_vm(const uint8_t *source,
 
   *destructed = context.destructed;
   return_result(&msg, &res);
-  verify_result(&msg, &res);
+  verify_result(&context, &msg, &res, return_data, return_data_size, &beneficiary);
 
   return (int)res.status_code;
 }

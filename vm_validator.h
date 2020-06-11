@@ -18,21 +18,22 @@ int get_script_args(uint8_t *script_data, size_t script_size, mol_seg_t *args_by
   }
   return 0;
 }
-int load_type_script_args(mol_seg_t *args_bytes_seg, size_t index, size_t source) {
+int load_type_script_args(uint8_t *buf, mol_seg_t *args_bytes_seg, size_t index, size_t source) {
   int ret;
-  uint8_t type_script[SCRIPT_SIZE];
   uint64_t len = SCRIPT_SIZE;
-  ret = ckb_load_cell_by_field(type_script, &len, 0, index, source, CKB_CELL_FIELD_TYPE);
+  ret = ckb_load_cell_by_field(buf, &len, 0, index, source, CKB_CELL_FIELD_TYPE);
   if (ret != CKB_SUCCESS) {
     return ret;
   }
-  return get_script_args(type_script, len, args_bytes_seg);
+  return get_script_args(buf, len, args_bytes_seg);
 }
 
 struct evmc_host_context {
   csal_change_t *existing_values;
   csal_change_t *changes;
   evmc_address tx_origin;
+  /* selfdestruct beneficiary */
+  evmc_address beneficiary;
   bool destructed;
 };
 
@@ -98,6 +99,7 @@ evmc_uint256be get_balance(struct evmc_host_context* context,
 void selfdestruct(struct evmc_host_context* context,
                   const evmc_address* address,
                   const evmc_address* beneficiary) {
+  memcpy(context->beneficiary.bytes, beneficiary->bytes, 20);
   context->destructed = true;
 }
 
@@ -118,69 +120,50 @@ void emit_log(struct evmc_host_context* context,
 }
 
 
-inline int verify_params(const uint8_t call_kind,
-                        const uint32_t flags,
-                        const uint32_t depth,
-                        const evmc_address *sender,
-                        const evmc_address *destination,
-                        const uint32_t code_size,
-                        const uint8_t *code_data,
-                        const uint32_t input_size,
-                        const uint8_t *input_data) {
+static bool touched = false;
+static evmc_address the_tx_origin{};
+inline int verify_params(const uint8_t *signature_data,
+                         const uint8_t call_kind,
+                         const uint32_t flags,
+                         const uint32_t depth,
+                         const evmc_address *tx_origin,
+                         const evmc_address *sender,
+                         const evmc_address *destination,
+                         const uint32_t code_size,
+                         const uint8_t *code_data,
+                         const uint32_t input_size,
+                         const uint8_t *input_data) {
   int ret;
   uint64_t len;
   blake2b_state blake2b_ctx;
 
-  uint8_t witness[WITNESS_SIZE];
-  size_t cell_source = 0;
-  len = WITNESS_SIZE;
-  // TODO: support contract call contract
-  ret = ckb_load_actual_type_witness(witness, &len, 0, &cell_source);
+  /* TODO: load once */
+  uint8_t script[SCRIPT_SIZE];
+  len = SCRIPT_SIZE;
+  ret = ckb_checked_load_script(script, &len, 0);
   if (ret != CKB_SUCCESS) {
     return ret;
   }
-  mol_seg_t witness_seg;
-  witness_seg.ptr = (uint8_t *)witness;
-  witness_seg.size = len;
-  debug_print_int("load witness:", (int) witness_seg.size);
-  if (MolReader_WitnessArgs_verify(&witness_seg, false) != MOL_OK) {
-    return ERROR_INVALID_DATA;
+  mol_seg_t current_args_bytes_seg;
+  ret = get_script_args(script, len, &current_args_bytes_seg);
+  if (ret != CKB_SUCCESS) {
+    return ret;
   }
-  mol_seg_t content_seg;
-  if (cell_source == CKB_SOURCE_GROUP_OUTPUT) {
-    content_seg = MolReader_WitnessArgs_get_output_type(&witness_seg);
-  } else {
-    content_seg = MolReader_WitnessArgs_get_input_type(&witness_seg);
-  }
-  if (MolReader_BytesOpt_is_none(&content_seg)) {
-    return ERROR_INVALID_DATA;
-  }
-  const mol_seg_t content_bytes_seg = MolReader_Bytes_raw_bytes(&content_seg);
 
+  /* Verify sender by signature field */
   uint8_t zero_signature[65];
   memset(zero_signature, 0, 65);
-  uint8_t signature_data[65];
-  memcpy(signature_data, content_bytes_seg.ptr + 4, 65);
   if (memcmp(signature_data, zero_signature, 65) == 0) {
     ckb_debug("verify contract sender signature");
     // contract call contract
-    uint8_t script[SCRIPT_SIZE];
-    len = SCRIPT_SIZE;
-    ret = ckb_checked_load_script(script, &len, 0);
-    if (ret != CKB_SUCCESS) {
-      return ret;
-    }
-    mol_seg_t current_args_bytes_seg;
-    ret = get_script_args(script, len, &current_args_bytes_seg);
-    if (ret != CKB_SUCCESS) {
-      return ret;
-    }
 
     bool found_other_contract = false;
+    uint8_t type_script[SCRIPT_SIZE];
     size_t index = 0;
-    mol_seg_t args_bytes_seg;
+    mol_seg_t args_bytes_seg{};
+    /* Search all inputs type script */
     while(1) {
-      load_type_script_args(&args_bytes_seg, index, CKB_SOURCE_INPUT);
+      load_type_script_args(type_script, &args_bytes_seg, index, CKB_SOURCE_INPUT);
       if (memcmp(args_bytes_seg.ptr, current_args_bytes_seg.ptr, CSAL_SCRIPT_ARGS_LEN) != 0
           && memcmp(args_bytes_seg.ptr, sender->bytes, CSAL_SCRIPT_ARGS_LEN) == 0) {
         found_other_contract = true;
@@ -188,10 +171,11 @@ inline int verify_params(const uint8_t call_kind,
       }
       index += 1;
     }
+    /* Search all outputs type script */
     if (!found_other_contract) {
       index = 0;
       while(1) {
-        load_type_script_args(&args_bytes_seg, index, CKB_SOURCE_OUTPUT);
+        load_type_script_args(type_script, &args_bytes_seg, index, CKB_SOURCE_OUTPUT);
         if (memcmp(args_bytes_seg.ptr, current_args_bytes_seg.ptr, CSAL_SCRIPT_ARGS_LEN) != 0
             && memcmp(args_bytes_seg.ptr, sender->bytes, CSAL_SCRIPT_ARGS_LEN) == 0) {
           found_other_contract = true;
@@ -205,6 +189,39 @@ inline int verify_params(const uint8_t call_kind,
       return -90;
     }
   } else {
+    if (touched) {
+      ckb_debug("ERROR: the non-zero signature is not in the first program");
+      return -91;
+    }
+
+    uint8_t witness[WITNESS_SIZE];
+    size_t cell_source = 0;
+    len = WITNESS_SIZE;
+    // TODO: support contract call contract
+    ret = ckb_load_actual_type_witness(witness, &len, 0, &cell_source);
+    if (ret != CKB_SUCCESS) {
+      return ret;
+    }
+    mol_seg_t witness_seg;
+    witness_seg.ptr = (uint8_t *)witness;
+    witness_seg.size = len;
+    debug_print_int("load witness:", (int) witness_seg.size);
+    if (MolReader_WitnessArgs_verify(&witness_seg, false) != MOL_OK) {
+      return ERROR_INVALID_DATA;
+    }
+    mol_seg_t content_seg;
+    if (cell_source == CKB_SOURCE_GROUP_OUTPUT) {
+      content_seg = MolReader_WitnessArgs_get_output_type(&witness_seg);
+    } else {
+      content_seg = MolReader_WitnessArgs_get_input_type(&witness_seg);
+    }
+    if (MolReader_BytesOpt_is_none(&content_seg)) {
+      return ERROR_INVALID_DATA;
+    }
+    const mol_seg_t content_bytes_seg = MolReader_Bytes_raw_bytes(&content_seg);
+    uint8_t signature_data[65];
+    memcpy(signature_data, content_bytes_seg.ptr + 4, 65);
+
     // Verify EoA account call contract
     ckb_debug("Verify EoA sender signature");
     memset(content_bytes_seg.ptr + 4, 0, 65);
@@ -231,13 +248,13 @@ inline int verify_params(const uint8_t call_kind,
     int recid = (int)signature_data[64];
     secp256k1_ecdsa_recoverable_signature signature;
     if (secp256k1_ecdsa_recoverable_signature_parse_compact(&context, &signature, signature_data, recid) == 0) {
-      return -91;
+      return -92;
     }
 
     /* Recover pubkey */
     secp256k1_pubkey pubkey;
     if (secp256k1_ecdsa_recover(&context, &pubkey, &signature, sign_message) != 1) {
-      return -92;
+      return -93;
     }
 
     /* Check pubkey hash */
@@ -246,15 +263,37 @@ inline int verify_params(const uint8_t call_kind,
     if (secp256k1_ec_pubkey_serialize(&context, temp,
                                       &pubkey_size, &pubkey,
                                       SECP256K1_EC_COMPRESSED) != 1) {
-      return -93;
+      return -94;
     }
     blake2b_init(&blake2b_ctx, 32);
     blake2b_update(&blake2b_ctx, temp, pubkey_size);
     blake2b_final(&blake2b_ctx, temp, 32);
 
+    /* Verify entrance program sender */
     if (memcmp(sender->bytes, temp, 20) != 0) {
-      return -94;
+      return -95;
     }
+    /* Verify tx_origin */
+    if (memcmp(sender->bytes, tx_origin->bytes, 20) != 0) {
+      return -96;
+    }
+  }
+
+  /* Verify tx_origin all the same */
+  if (!touched) {
+    /* TODO: tx_origin should be the same with next contract */
+    memcpy(the_tx_origin.bytes, tx_origin->bytes, 20);
+  } else {
+    if (memcmp(the_tx_origin.bytes, tx_origin->bytes, 20) != 0) {
+      /* tx_origin not the same */
+      return -97;
+    }
+  }
+
+  /* Verify destination match current script args */
+  if (memcmp(destination->bytes, current_args_bytes_seg.ptr, CSAL_SCRIPT_ARGS_LEN) != 0) {
+    ckb_debug("ERROR: destination not match current script args");
+    return -98;
   }
 
   /*
@@ -298,6 +337,10 @@ inline int verify_params(const uint8_t call_kind,
       return ret;
     }
   }
+
+  if (!touched) {
+    touched = true;
+  }
   return 0;
 }
 
@@ -311,13 +354,19 @@ inline void context_init(struct evmc_host_context* context,
   context->changes = changes;
   context->tx_origin = tx_origin;
   context->destructed = false;
+  memset(context->beneficiary.bytes, 0, 20);
 }
 
 inline void return_result(const struct evmc_message *_msg, const struct evmc_result *res) {
   /* Do nothing */
 }
 
-inline int verify_result(const struct evmc_message *msg, const struct evmc_result *res) {
+inline int verify_result(struct evmc_host_context* context,
+                         const struct evmc_message *msg,
+                         const struct evmc_result *res,
+                         const uint8_t *return_data,
+                         const size_t return_data_size,
+                         const evmc_address *beneficiary) {
   if (msg->kind == EVMC_CREATE) {
     /*
      * verify code_hash in output data filed match the blake2b_h256(res.output_data)
@@ -345,5 +394,19 @@ inline int verify_result(const struct evmc_message *msg, const struct evmc_resul
       return -111;
     }
   }
+
+  /* Verify return data */
+  if (return_data_size != res->output_size) {
+    return -112;
+  }
+  if (memcmp(return_data, res->output_data, return_data_size) != 0) {
+    return -113;
+  }
+  /* verify selfdestruct */
+  if (memcmp(beneficiary->bytes, context->beneficiary.bytes, 20) != 0) {
+    return -114;
+  }
+
+  /* TODO: Verify res.output_data match the program.return_data */
   return 0;
 }

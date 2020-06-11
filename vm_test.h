@@ -184,15 +184,22 @@ void emit_log(struct evmc_host_context* context,
   }
 }
 
-inline int verify_params(const uint8_t call_kind,
+inline int verify_params(const uint8_t *signature_data,
+                         const uint8_t call_kind,
                          const uint32_t flags,
                          const uint32_t depth,
+                         const evmc_address *tx_origin,
                          const evmc_address *sender,
                          const evmc_address *destination,
                          const uint32_t code_size,
                          const uint8_t *code_data,
                          const uint32_t input_size,
                          const uint8_t *input_data) {
+  printf("signature: ");
+  for (size_t i = 0; i < 65; i++) {
+    printf("%02x", *(signature_data+i));
+  }
+  printf("\n");
   printf("call_kind: %d\n", call_kind);
   printf("flags: %d\n", flags);
   printf("depth: %d\n", depth);
@@ -244,6 +251,11 @@ inline void return_result(const struct evmc_message *msg, const struct evmc_resu
   printf("\n");
 }
 
-inline int verify_result(const struct evmc_message *msg, const struct evmc_result *res) {
+inline int verify_result(struct evmc_host_context* context,
+                         const struct evmc_message *msg,
+                         const struct evmc_result *res,
+                         const uint8_t *return_data,
+                         const size_t return_data_size,
+                         const evmc_address *beneficiary) {
   return 0;
 }

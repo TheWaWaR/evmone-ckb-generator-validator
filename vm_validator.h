@@ -136,6 +136,51 @@ inline int verify_params(const uint8_t *signature_data,
   int ret;
   uint64_t len;
   blake2b_state blake2b_ctx;
+  uint8_t zero_signature[65];
+  memset(zero_signature, 0, 65);
+
+  uint8_t witness[WITNESS_SIZE];
+  /* Verify there is one and only one non-zero signature */
+  if (!touched) {
+    bool has_entrance_signature = false;
+    size_t witness_index = 0;
+    len = WITNESS_SIZE;
+    while(1) {
+      ret = ckb_load_witness(witness, &len, 0, witness_index, CKB_SOURCE_OUTPUT);
+      if (ret == CKB_INDEX_OUT_OF_BOUND) {
+        break;
+      }
+      if (ret != CKB_SUCCESS) {
+        return ret;
+      }
+      mol_seg_t witness_seg;
+      witness_seg.ptr = (uint8_t *)witness;
+      witness_seg.size = len;
+      debug_print_int("load witness:", (int) witness_seg.size);
+      if (MolReader_WitnessArgs_verify(&witness_seg, false) != MOL_OK) {
+        return ERROR_INVALID_DATA;
+      }
+      mol_seg_t content_seg;
+      content_seg = MolReader_WitnessArgs_get_input_type(&witness_seg);
+      if (MolReader_BytesOpt_is_none(&content_seg)) {
+        content_seg = MolReader_WitnessArgs_get_output_type(&witness_seg);
+        if (MolReader_BytesOpt_is_none(&content_seg)) {
+          /* Witness without type script */
+          continue;
+        }
+      }
+      const mol_seg_t content_bytes_seg = MolReader_Bytes_raw_bytes(&content_seg);
+      if (memcmp(content_bytes_seg.ptr+4, zero_signature, 65) != 0) {
+        if (has_entrance_signature) {
+          /* multiple entrance signature */
+          return -80;
+        } else {
+          has_entrance_signature = true;
+        }
+      }
+      witness_index += 1;
+    }
+  }
 
   /* TODO: load once */
   uint8_t script[SCRIPT_SIZE];
@@ -151,8 +196,6 @@ inline int verify_params(const uint8_t *signature_data,
   }
 
   /* Verify sender by signature field */
-  uint8_t zero_signature[65];
-  memset(zero_signature, 0, 65);
   if (memcmp(signature_data, zero_signature, 65) == 0) {
     ckb_debug("verify contract sender signature");
     // contract call contract
@@ -194,7 +237,6 @@ inline int verify_params(const uint8_t *signature_data,
       return -91;
     }
 
-    uint8_t witness[WITNESS_SIZE];
     size_t cell_source = 0;
     len = WITNESS_SIZE;
     // TODO: support contract call contract

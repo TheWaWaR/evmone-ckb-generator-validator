@@ -31,6 +31,10 @@
 #define DESTINATION_OFFSET (SENDER_OFFSET + ADDRESS_LEN)
 #define CODE_OFFSET (DESTINATION_OFFSET + ADDRESS_LEN)
 
+
+static uint32_t the_code_size = 0;
+static uint8_t *the_code_data = NULL;
+
 /// NOTE: This program must compile use g++ since evmone implemented with c++17
 int execute_vm(const uint8_t *source,
                uint32_t length,
@@ -46,8 +50,17 @@ int execute_vm(const uint8_t *source,
   const evmc_address tx_origin = *(evmc_address *)(source + TX_ORIGIN_OFFSET);
   const evmc_address sender = *(evmc_address *)(source + SENDER_OFFSET);
   const evmc_address destination = *(evmc_address *)(source + DESTINATION_OFFSET);
-  const uint32_t code_size = *(uint32_t *)(source + CODE_OFFSET);
-  const uint8_t *code_data = source + (CODE_OFFSET + 4);
+  uint32_t code_size = *(uint32_t *)(source + CODE_OFFSET);
+  uint8_t *code_data;
+  /* FIXME: handle is_inner_call */
+  if (code_size > 0) {
+    code_data = (uint8_t *)(source + (CODE_OFFSET + 4));
+    the_code_size = code_size;
+    the_code_data = code_data;
+  } else {
+    code_size = the_code_size;
+    code_data = the_code_data;
+  }
   const uint32_t input_size = *(uint32_t *)(code_data + code_size);
   const uint8_t *input_data = input_size > 0 ? code_data + (code_size + 4) : NULL;
 

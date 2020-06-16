@@ -1,6 +1,8 @@
+# TARGET := riscv64-unknown-linux-gnu
 TARGET := riscv64-unknown-elf
 CC := $(TARGET)-gcc
 CXX := $(TARGET)-g++
+LD := $(TARGET)-gcc
 OBJCOPY := $(TARGET)-objcopy
 
 CFLAGS_CKB_STD = -Ideps/ckb-c-stdlib
@@ -8,13 +10,16 @@ CFLAGS_INTX := -Ideps/intx/lib/intx -Ideps/intx/include
 CFLAGS_ETHASH := -Ideps/ethash/include -Ideps/ethash/lib/ethash -Ideps/ethash/lib/keccak -Ideps/ethash/lib/support
 CFLAGS_EVMONE := -Ideps/evmone/lib/evmone -Ideps/evmone/include -Ideps/evmone/evmc/include
 CFLAGS_SECP := -isystem deps/secp256k1/src -isystem deps/secp256k1
-CFLAGS := -O3 $(CFLAGS_CKB_STD) $(CFLAGS_EVMONE) $(CFLAGS_INTX) $(CFLAGS_ETHASH) $(CFLAGS_SECP) -Wall
+CFLAGS := -O3 $(CFLAGS_CKB_STD) $(CFLAGS_EVMONE) $(CFLAGS_INTX) $(CFLAGS_ETHASH) $(CFLAGS_SECP) -Wall -g
 CXXFLAGS := $(CFLAGS) -std=c++1z
 LDFLAGS := -fdata-sections -ffunction-sections -Wl,--gc-sections
 SECP256K1_SRC := deps/secp256k1/src/ecmult_static_pre_context.h
 
 ALL_OBJS := build/evmone.o build/analysis.o build/execution.o build/instructions.o build/div.o build/keccak.o build/keccakf800.o build/keccakf1600.o
 
+# docker pull nervos/ckb-riscv-gnu-toolchain:gnu-bionic-20191012
+# BUILDER_DOCKER := nervos/ckb-riscv-gnu-toolchain@sha256:aae8a3f79705f67d505d1f1d5ddc694a4fd537ed1c7e9622420a470d59ba2ec3
+# docker pull nervos/ckb-riscv-gnu-toolchain:bionic-20190702
 BUILDER_DOCKER := nervos/ckb-riscv-gnu-toolchain@sha256:7b168b4b109a0f741078a71b7c4dddaf1d283a5244608f7851f5714fbad273ba
 
 all: build/generator build/generator_test build/validator
@@ -25,10 +30,12 @@ all-via-docker:
 
 build/validator: vm.c vm_validator.h build/secp256k1_data_info.h $(SECP256K1_SRC) $(ALL_OBJS)
 	$(CXX) $(CFLAGS) $(LDFLAGS) -Ibuild -o $@ vm.c $(ALL_OBJS)
+	$(OBJCOPY) --only-keep-debug $@ $@.debug
 	$(OBJCOPY) --strip-debug --strip-all $@
 
 build/generator: vm.c vm_generator.h $(ALL_OBJS)
 	$(CXX) $(CFLAGS) $(LDFLAGS) -o $@ vm.c $(ALL_OBJS) -DBUILD_GENERATOR
+	$(OBJCOPY) --only-keep-debug $@ $@.debug
 	$(OBJCOPY) --strip-debug --strip-all $@
 
 build/generator_test: vm.c vm_test.h $(ALL_OBJS)

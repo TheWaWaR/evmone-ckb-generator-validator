@@ -66,7 +66,7 @@ int csal_change_fetch(csal_change_t *state, const uint8_t key[CSAL_KEY_BYTES],
                       uint8_t value[CSAL_VALUE_BYTES]);
 void csal_change_organize(csal_change_t *state);
 
-static char debug_buffer[1024];
+static char debug_buffer[64 * 1024];
 static void debug_print_data(const char *prefix,
                              const uint8_t *data,
                              uint32_t data_len) {

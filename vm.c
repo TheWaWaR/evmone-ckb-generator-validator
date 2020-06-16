@@ -9,14 +9,6 @@
 #include "validator.h"
 #endif
 
-#ifdef TEST_BIN
-#include "vm_test.h"
-#elif defined(BUILD_GENERATOR)
-#include "vm_generator.h"
-#else
-#include "vm_validator.h"
-#endif
-
 #define SIGNATURE_LEN 65
 #define PROGRAM_LEN 4
 #define CALL_KIND_LEN 1
@@ -31,6 +23,13 @@
 #define DESTINATION_OFFSET (SENDER_OFFSET + ADDRESS_LEN)
 #define CODE_OFFSET (DESTINATION_OFFSET + ADDRESS_LEN)
 
+#ifdef TEST_BIN
+#include "vm_test.h"
+#elif defined(BUILD_GENERATOR)
+#include "vm_generator.h"
+#else
+#include "vm_validator.h"
+#endif
 
 static uint32_t the_code_size = 0;
 static uint8_t *the_code_data = NULL;
@@ -52,17 +51,23 @@ int execute_vm(const uint8_t *source,
   const evmc_address destination = *(evmc_address *)(source + DESTINATION_OFFSET);
   uint32_t code_size = *(uint32_t *)(source + CODE_OFFSET);
   uint8_t *code_data;
+  uint32_t input_size;
+  uint8_t *input_data;
   /* FIXME: handle is_inner_call */
   if (code_size > 0) {
     code_data = (uint8_t *)(source + (CODE_OFFSET + 4));
+    input_size = *(uint32_t *)(code_data + code_size);
+    input_data = input_size > 0 ? code_data + (code_size + 4) : NULL;
+
     the_code_size = code_size;
     the_code_data = code_data;
   } else {
+    input_size = *(uint32_t *)(source + CODE_OFFSET + 4);
+    input_data = input_size > 0 ? ((uint8_t *)source + CODE_OFFSET + 8) : NULL;
+
     code_size = the_code_size;
     code_data = the_code_data;
   }
-  const uint32_t input_size = *(uint32_t *)(code_data + code_size);
-  const uint8_t *input_data = input_size > 0 ? code_data + (code_size + 4) : NULL;
 
   const uint8_t *other_data = source + SIGNATURE_LEN + PROGRAM_LEN + program_len;
   const uint32_t return_data_len = *(uint32_t *)other_data;
@@ -72,12 +77,15 @@ int execute_vm(const uint8_t *source,
 
   int ret = verify_params(signature, call_kind, flags, depth, &tx_origin, &sender, &destination,
                           code_size, code_data, input_size, input_data);
+#ifdef CSAL_VALIDATOR_TYPE
+  debug_print_int("verify params", ret);
+#endif
   if (ret != 0) {
     return ret;
   }
 
   struct evmc_vm *vm = evmc_create_evmone();
-  struct evmc_host_interface interface = { account_exists, get_storage, set_storage, get_balance, get_code_size, get_code_hash, copy_code, selfdestruct, NULL, get_tx_context, NULL, emit_log};
+  struct evmc_host_interface interface = { account_exists, get_storage, set_storage, get_balance, get_code_size, get_code_hash, copy_code, selfdestruct, call, get_tx_context, NULL, emit_log};
   struct evmc_host_context context;
   context_init(&context, vm, &interface, tx_origin, existing_values, changes);
 
@@ -97,7 +105,16 @@ int execute_vm(const uint8_t *source,
 
   *destructed = context.destructed;
   return_result(&msg, &res);
-  verify_result(&context, &msg, &res, return_data, return_data_size, &beneficiary);
+  ret = verify_result(&context, &msg, &res, return_data, return_data_size, &beneficiary);
+#ifdef CSAL_VALIDATOR_TYPE
+  debug_print_int("verify result", ret);
+#endif
+  if (ret != 0) {
+    return ret;
+  }
 
+#ifdef CSAL_VALIDATOR_TYPE
+  debug_print_int("return status_code", res.status_code);
+#endif
   return (int)res.status_code;
 }

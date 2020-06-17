@@ -102,7 +102,6 @@ int execute_vm(const uint8_t *source,
   msg.create2_salt = evmc_bytes32{};
 
   struct evmc_result res = vm->execute(vm, &interface, &context, EVMC_MAX_REVISION, &msg, code_data, code_size);
-
   *destructed = context.destructed;
   return_result(&msg, &res);
   ret = verify_result(&context, &msg, &res, return_data, return_data_size, &beneficiary);

@@ -66,6 +66,7 @@ int csal_change_fetch(csal_change_t *state, const uint8_t key[CSAL_KEY_BYTES],
                       uint8_t value[CSAL_VALUE_BYTES]);
 void csal_change_organize(csal_change_t *state);
 
+#ifdef DEBUG_VALIDATOR
 static char debug_buffer[64 * 1024];
 static void debug_print_data(const char *prefix,
                              const uint8_t *data,
@@ -82,6 +83,27 @@ static void debug_print_int(const char *prefix, int ret) {
   sprintf(debug_buffer, "%s => %d", prefix, ret);
   ckb_debug(debug_buffer);
 }
+#else
+static char debug_buffer[1024];
+static void debug_print_data(const char *prefix, const uint8_t *data, uint32_t data_len) {
+  if (strlen(prefix) + data_len * 2 + 3 > 120) {
+    ckb_debug(prefix);
+    ckb_debug("...... <data too long> ......");
+  } else {
+    int offset = 0;
+    offset += sprintf(debug_buffer, "%s 0x", prefix);
+    for (size_t i = 0; i < data_len; i++) {
+      offset += sprintf(debug_buffer + offset, "%02x", data[i]);
+    }
+    debug_buffer[offset] = '\0';
+    ckb_debug(debug_buffer);
+  }
+}
+static void debug_print_int(const char *prefix, int ret) {
+  sprintf(debug_buffer, "%s => %d", prefix, ret);
+  ckb_debug(debug_buffer);
+}
+#endif
 
 
 #ifndef CSAL_NO_IMPLEMENTATION
@@ -94,13 +116,15 @@ void csal_change_init(csal_change_t *state, csal_entry_t *buffer,
 
 int csal_change_insert(csal_change_t *state, const uint8_t key[CSAL_KEY_BYTES],
                        const uint8_t value[CSAL_VALUE_BYTES]) {
+  /*
   if (state->length < state->capacity) {
-    /* Shortcut, append at last */
+    // Shortcut, append at last
     memcpy(state->entries[state->length].key, key, CSAL_KEY_BYTES);
     memcpy(state->entries[state->length].value, value, CSAL_VALUE_BYTES);
     state->length++;
     return 0;
   }
+  */
   /* Find the last matching key, and overwrites it */
   int32_t i = state->length - 1;
   for (; i >= 0; i--) {
@@ -110,9 +134,12 @@ int csal_change_insert(csal_change_t *state, const uint8_t key[CSAL_KEY_BYTES],
   }
   if (i < 0) {
     /* No matching key found, we are running out of capacity */
-    return CSAL_ERROR_INSUFFICIENT_CAPACITY;
+    memcpy(state->entries[state->length].key, key, CSAL_VALUE_BYTES);
+    memcpy(state->entries[state->length].value, value, CSAL_VALUE_BYTES);
+    state->length++;
+  } else {
+    memcpy(state->entries[i].value, value, CSAL_VALUE_BYTES);
   }
-  memcpy(state->entries[i].value, value, CSAL_VALUE_BYTES);
   return 0;
 }
 
@@ -132,21 +159,24 @@ int _csal_entry_cmp(const void *a, const void *b) {
   const csal_entry_t *ea = (const csal_entry_t *)a;
   const csal_entry_t *eb = (const csal_entry_t *)b;
 
-  for (uint32_t i = CSAL_KEY_BYTES - 1; i >= 0; i--) {
+  for (int i = CSAL_KEY_BYTES - 1; i >= 0; i--) {
     int cmp_result = ea->key[i] - eb->key[i];
     if (cmp_result != 0) {
       return cmp_result;
     }
   }
-  return ea->order - eb->order;
+  return 0;
 }
 
 void csal_change_organize(csal_change_t *state) {
+  /*
   for (uint32_t i = 0; i < state->length; i++) {
     state->entries[i].order = i;
   }
+  */
   qsort(state->entries, state->length, sizeof(csal_entry_t), _csal_entry_cmp);
   /* Remove duplicate ones */
+  /*
   int32_t sorted = 0, next = 0;
   while ((uint32_t)next < state->length) {
     int32_t item_index = next++;
@@ -164,6 +194,7 @@ void csal_change_organize(csal_change_t *state) {
     sorted++;
   }
   state->length = sorted;
+  */
 }
 #endif /* CSAL_NO_IMPLEMENTATION */
 
@@ -268,16 +299,13 @@ int csal_smt_update_root(uint8_t buffer[32], const csal_change_t *pairs,
         if (leave_index >= pairs->length) {
           return CSAL_ERROR_INVALID_PROOF;
         }
-        memcpy(stack_keys[stack_top], pairs->entries[leave_index].key,
-               CSAL_KEY_BYTES);
+        memcpy(stack_keys[stack_top], pairs->entries[leave_index].key, CSAL_KEY_BYTES);
         if (memcmp(pairs->entries[leave_index].value, zero_value, 32) == 0) {
           memcpy(stack_values[stack_top], zero_value, 32);
         } else {
           blake2b_init(&blake2b_ctx, 32);
-          blake2b_update(&blake2b_ctx, pairs->entries[leave_index].key,
-                         CSAL_KEY_BYTES);
-          blake2b_update(&blake2b_ctx, pairs->entries[leave_index].value,
-                         CSAL_VALUE_BYTES);
+          blake2b_update(&blake2b_ctx, pairs->entries[leave_index].key, CSAL_KEY_BYTES);
+          blake2b_update(&blake2b_ctx, pairs->entries[leave_index].value, CSAL_VALUE_BYTES);
           blake2b_final(&blake2b_ctx, stack_values[stack_top], 32);
         }
         stack_top++;
@@ -333,8 +361,6 @@ int csal_smt_update_root(uint8_t buffer[32], const csal_change_t *pairs,
         } else {
           _csal_merge(&blake2b_ctx, zero_value, value_a, value_b, value_a);
         }
-        debug_print_data("\nparent_key_a:", key_a, 32);
-        debug_print_data("\nparent      :", value_a, 32);
         stack_top++;
       } break;
       default:
@@ -645,8 +671,6 @@ int main() {
       if (ret != CKB_SUCCESS) {
         return ret;
       }
-      debug_print_data("read key  :", key, CSAL_KEY_BYTES);
-      debug_print_data("read value:", value, CSAL_VALUE_BYTES);
       ret = csal_change_insert(&read_changes, key, value);
       if (ret != CKB_SUCCESS) {
         return ret;
@@ -665,6 +689,7 @@ int main() {
     }
 
     if (proof_size > 0) {
+      csal_change_organize(&read_changes);
       ret = csal_smt_verify(input_root_hash, &read_changes, proof, proof_size);
       debug_print_int("csal_smt_verify(input_root_hash);", ret);
       if (ret != CKB_SUCCESS) {
@@ -686,8 +711,6 @@ int main() {
     if (ret != CKB_SUCCESS) {
       return ret;
     }
-
-
     csal_change_organize(&write_changes);
 
     /*
@@ -695,11 +718,14 @@ int main() {
      * read values, we can reuse read_changes.
      */
     csal_change_init(&read_changes, read_entries, MAXIMUM_READS);
+    ckb_debug("csal_change_init(&read_changes, read_entries, MAXIMUM_READS) end");
     uint32_t write_changes_len;
     ret = reader_uint32(&content_reader, &write_changes_len);
+    ckb_debug("reader_uint32(&content_reader, &write_changes_len) end");
     if (ret != CKB_SUCCESS) {
       return ret;
     }
+    debug_print_int("write_changes.length:", write_changes.length);
     debug_print_int("write_changes_len:", write_changes_len);
     if (write_changes_len != write_changes.length) {
       return -111;
@@ -710,7 +736,6 @@ int main() {
       if (ret != CKB_SUCCESS) {
         return ret;
       }
-      debug_print_data("write old_value:", old_value, CSAL_VALUE_BYTES);
       ret = csal_change_insert(&read_changes, write_changes.entries[i].key,
                                old_value);
       if (ret != CKB_SUCCESS) {
@@ -731,6 +756,7 @@ int main() {
     }
     debug_print_data("write old proof:", proof, proof_size);
     if (proof_size > 0) {
+      csal_change_organize(&read_changes);
       ret = csal_smt_verify(input_root_hash, &read_changes, proof, proof_size);
       debug_print_int("csal_smt_verify(input_root_hash, &read_changes);", ret);
       if (ret != CKB_SUCCESS) {
@@ -744,8 +770,8 @@ int main() {
      * using wrtie_changes
      */
     if (proof_size > 0) {
-      ret =
-        csal_smt_update_root(input_root_hash, &write_changes, proof, proof_size);
+      csal_change_organize(&write_changes);
+      ret = csal_smt_update_root(input_root_hash, &write_changes, proof, proof_size);
       debug_print_int("csal_smt_update_root(input_root_hash, &write_changes);", ret);
       if (ret != CKB_SUCCESS) {
         return ret;
@@ -772,6 +798,7 @@ int main() {
   if (len < 32) {
     return ERROR_INVALID_DATA;
   }
+  debug_print_data("input root:", input_root_hash, 32);
   debug_print_data("output root:", output_root_hash, 32);
 
   if (memcmp(input_root_hash, output_root_hash, 32) != 0) {

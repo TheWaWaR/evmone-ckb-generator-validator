@@ -525,6 +525,9 @@ evmc_bytes32 get_storage(struct evmc_host_context* context,
   ret = csal_change_fetch(context->changes, key->bytes, value.bytes);
   if (ret != 0) {
     ret = csal_change_fetch(context->existing_values, key->bytes, value.bytes);
+    if (ret != 0) {
+      memset(value.bytes, 0, 32);
+    }
   }
   return value;
 }
@@ -534,7 +537,6 @@ enum evmc_storage_status set_storage(struct evmc_host_context* context,
                                      const evmc_bytes32* key,
                                      const evmc_bytes32* value) {
   /* int _ret; */
-  csal_change_insert(context->existing_values, key->bytes, value->bytes);
   csal_change_insert(context->changes, key->bytes, value->bytes);
   return EVMC_STORAGE_ADDED;
 }
@@ -967,7 +969,7 @@ inline int verify_params(const uint8_t *signature_data,
     }
 
     /* Check pubkey hash */
-    uint8_t temp[32768];
+    uint8_t temp[65];
     size_t pubkey_size = 33;
     if (secp256k1_ec_pubkey_serialize(&context, temp,
                                       &pubkey_size, &pubkey,
